@@ -17,14 +17,17 @@ snapatch/
 ├── maingate.py             # Streamlit 진입점 (사이드바 네비게이션)
 ├── snapatch/
 │   ├── bootstrap.py        # vendor 경로 + .env 초기화
+│   ├── cli/
+│   │   ├── breaker.py      # breaker 터미널 CLI
+│   │   └── diver.py        # diver 터미널 CLI
 │   └── features/
 │       ├── breaker.py      # 시황 속보 페이지
 │       ├── diver.py        # 키워드 뉴스 분석 페이지
 │       ├── dejavu.py       # 과거 유사 패턴 페이지
 │       └── match.py        # 유사 종목 검색 페이지
 ├── vendor/                 # 원본 캡스톤 로직 (그대로 보존)
-│   ├── breaker/            # briefing.py, prompt.py
-│   ├── diver/news_harness/ # 뉴스 수집/분석 패키지
+│   ├── breaker/            # breaker.py, prompt.py
+│   ├── diver/              # diver.py, config.py, pipeline.py, prompt.md
 │   ├── dejavu/dejavu00.py  # 유사 패턴 엔진
 │   └── match/              # match_engine.py, krx_io.py, tickers.csv
 ├── requirements.txt
@@ -64,11 +67,48 @@ copy .env.example .env   # Windows
 
 ## 실행
 
+### 웹 UI
+
 ```bash
 python -m streamlit run maingate.py
 ```
 
 브라우저가 열리면 왼쪽 사이드바에서 기능을 선택해 사용합니다.
+`.streamlit/config.toml` 에 `headless = true` 이면 브라우저가 자동으로 열리지 않으므로
+http://localhost:8501 을 직접 여세요.
+
+### breaker 터미널 CLI (capstone01)
+
+프로젝트 루트에서:
+
+```bash
+python -m snapatch.cli.breaker              # 즉시 1회 생성 (기본, once 생략 가능)
+python -m snapatch.cli.breaker --print      # 콘솔만 출력
+python -m snapatch.cli.breaker once --print   # 위와 동일
+python -m snapatch.cli.breaker loop           # 평일 09~15시 KST 매시 정각
+python -m snapatch.cli.breaker doctor         # GEMINI_API_KEY 확인
+python -m snapatch.cli.breaker --model gemini-2.5-flash once
+```
+
+### diver 터미널 CLI (capstone02)
+
+프로젝트 루트에서:
+
+```bash
+python -m snapatch.cli.diver --query 삼성전자
+python -m snapatch.cli.diver --query 삼성전자 --format text
+python -m snapatch.cli.diver --query 삼성전자 --fast --format text
+python -m snapatch.cli.diver --query 삼성전자 --target-count 5 --max-days 30 --debug
+```
+
+환경변수 `DEFAULT_TARGET_COUNT`, `SKIP_CONTENT`, `DEFAULT_OUTPUT_FORMAT` 등은
+`.env`에서 기본값으로 적용됩니다.
+
+### diver 테스트 (capstone02 하네스)
+
+```bash
+pytest tests/ -q
+```
 
 ## 결과물
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import List
 
-from .models import AnalyzedNewsItem
+from models import AnalyzedNewsItem
 
 
 def _keyword_set(item: AnalyzedNewsItem) -> set[str]:

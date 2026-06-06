@@ -10,8 +10,8 @@ from typing import List
 import requests
 from dateutil import tz
 
-from .config import Settings
-from .models import NewsItem
+from config import Settings
+from models import NewsItem
 
 NAVER_NEWS_API = "https://openapi.naver.com/v1/search/news.json"
 KST = tz.gettz("Asia/Seoul")

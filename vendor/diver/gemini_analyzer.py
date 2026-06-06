@@ -13,8 +13,8 @@ except ImportError:  # pragma: no cover
 from google import genai
 from google.genai.types import HttpOptions
 
-from .config import Settings
-from .models import NewsItem
+from config import Settings
+from models import NewsItem
 
 
 class GeminiNewsAnalyzer:
@@ -26,7 +26,7 @@ class GeminiNewsAnalyzer:
 
     @staticmethod
     def _load_base_prompt() -> str:
-        project_root = Path(__file__).resolve().parents[2]
+        project_root = Path(__file__).resolve().parent
         return (project_root / "prompt.md").read_text(encoding="utf-8").strip()
 
     @staticmethod

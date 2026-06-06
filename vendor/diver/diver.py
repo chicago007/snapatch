@@ -3,11 +3,12 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from typing import Any
 
-from .config import Settings
-from .models import AnalysisResult
-from .pipeline import run_pipeline
+from config import Settings
+from models import AnalysisResult
+from pipeline import run_pipeline
 
 
 def _to_dict(result: AnalysisResult | dict[str, Any]) -> dict[str, Any]:
@@ -219,6 +220,27 @@ def format_text(result: AnalysisResult | dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _format_elapsed(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}초"
+    minutes = int(seconds // 60)
+    remainder = seconds % 60
+    return f"{minutes}분 {remainder:.1f}초"
+
+
+def print_elapsed(seconds: float, output_format: str) -> None:
+    label = _format_elapsed(seconds)
+    if output_format == "text":
+        print(f"\n━━━ 실행 정보 ━━━\n  소요 시간: {label}")
+        return
+    print(
+        json.dumps(
+            {"elapsed_seconds": round(seconds, 2), "elapsed_display": label},
+            ensure_ascii=False,
+        ),
+    )
+
+
 def print_result(
     result: AnalysisResult | dict[str, Any],
     output_format: str,
@@ -270,6 +292,7 @@ def main():
     )
     args = parser.parse_args()
 
+    started_at = time.perf_counter()
     result = run_pipeline(
         query=args.query,
         target_count=args.target_count,
@@ -277,13 +300,16 @@ def main():
         debug=args.debug,
         skip_content=args.skip_content or args.fast,
     )
+    elapsed = time.perf_counter() - started_at
 
     if args.debug and isinstance(result, tuple):
         analyzed, _ = result
         print_result(analyzed, args.format)
+        print_elapsed(elapsed, args.format)
         return
 
     print_result(result, args.format)
+    print_elapsed(elapsed, args.format)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,20 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-load_dotenv()
+VENDOR_DIR = Path(__file__).resolve().parent
+SNAPATCH_ROOT = VENDOR_DIR.parent.parent
+
+
+def _load_dotenv_from_project() -> None:
+    load_dotenv(SNAPATCH_ROOT / ".env", override=True)
+    load_dotenv(VENDOR_DIR / ".env", override=False)
+
+
+_load_dotenv_from_project()
 
 
 def _get_bool(name: str, default: bool) -> bool:

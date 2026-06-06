@@ -1,7 +1,7 @@
 """vendor 소스 경로와 환경변수(.env)를 한 번만 초기화한다.
 
 각 캡스톤 원본 코드는 `vendor/<feature>/` 에 그대로 보존되어 있고,
-최상위 모듈 이름(`briefing`, `news_harness`, `dejavu00`, `match_engine`)으로
+최상위 모듈 이름(`breaker`, `config`, `pipeline`, `dejavu00`, `match_engine`)으로
 import 할 수 있도록 sys.path 에 등록한다.
 """
 

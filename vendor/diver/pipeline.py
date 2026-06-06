@@ -3,12 +3,12 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
 
-from .article_parser import extract_article_text
-from .config import Settings
-from .gemini_analyzer import GeminiNewsAnalyzer
-from .models import AnalysisResult, NewsItem
-from .naver_client import NaverNewsClient
-from .post_filter import filter_analyzed_similar_news
+from article_parser import extract_article_text
+from config import Settings
+from gemini_analyzer import GeminiNewsAnalyzer
+from models import AnalysisResult, NewsItem
+from naver_client import NaverNewsClient
+from post_filter import filter_analyzed_similar_news
 
 
 def fill_article_contents(

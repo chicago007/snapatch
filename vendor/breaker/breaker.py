@@ -10,12 +10,17 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     # 2) 의존성 설치
     pip install -r requirements.txt
 
-    # 3) 실행
-    python briefing.py once                   # 즉시 1회 생성 → 콘솔 + reports/ 저장
-    python briefing.py once --print           # 콘솔에만 출력 (파일 저장 X)
-    python briefing.py loop                   # 평일 09~15시 KST 매시 정각 자동 실행
-    python briefing.py loop --once-now        # 시작 직후 1회 생성하고 그 뒤 자동 루프
-    python briefing.py --model gemini-2.5-flash once
+    # 3) 실행 (snapatch 프로젝트 루트에서)
+    python -m snapatch.cli.breaker              # 기본: once (즉시 1회 생성)
+    python -m snapatch.cli.breaker --print      # once + 콘솔만 출력
+    python -m snapatch.cli.breaker once         # 위와 동일
+    python -m snapatch.cli.breaker loop
+    python -m snapatch.cli.breaker doctor
+    python -m snapatch.cli.breaker --model gemini-2.5-flash
+
+    # vendor 직접 실행도 가능 (서브커맨드 생략 시 once)
+    python vendor/breaker/breaker.py
+    python vendor/breaker/breaker.py --print
 
 옵션:
     --model     사용할 Gemini 모델 (기본: gemini-2.5-pro)
@@ -41,7 +46,8 @@ import requests
 
 from prompt import STOCK_BRIEFING_SYSTEM_PROMPT, build_user_prompt
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+VENDOR_DIR = Path(__file__).resolve().parent
+SNAPATCH_ROOT = VENDOR_DIR.parent.parent
 
 
 def _load_dotenv_from_project() -> None:
@@ -49,8 +55,9 @@ def _load_dotenv_from_project() -> None:
         from dotenv import load_dotenv
     except ImportError:
         return
-    # 프로젝트 .env가 시스템에 잘못된 GEMINI_API_KEY가 있어도 우선 적용되게 함
-    load_dotenv(PROJECT_ROOT / ".env", override=True)
+    # snapatch 루트 .env 우선 (통합 앱 환경)
+    load_dotenv(SNAPATCH_ROOT / ".env", override=True)
+    load_dotenv(VENDOR_DIR / ".env", override=False)
 
 
 _load_dotenv_from_project()
@@ -99,7 +106,7 @@ GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
 
-REPORTS_DIR = Path(__file__).parent / "reports"
+REPORTS_DIR = SNAPATCH_ROOT / "reports"
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,13 @@ def generate_briefing(
                 "Cloud Console에서 해당 프로젝트에 Generative Language API가 "
                 "켜져 있는지·키 제한(HTTP 리퍼러 등)이 서버 요청을 막지 않는지 "
                 "확인하세요."
+            )
+        elif resp.status_code == 429 or "Quota exceeded" in body_preview:
+            hint = (
+                "\n\n[안내] Gemini API 할당량(quota)을 초과했습니다. "
+                "잠시 후 다시 시도하거나 `.env`의 GEMINI_MODEL을 "
+                "`gemini-2.5-flash`로 바꿔 보세요. "
+                "사용량: https://ai.dev/rate-limit"
             )
         raise RuntimeError(f"Gemini API {resp.status_code}: {body_preview}{hint}")
 
@@ -345,7 +359,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     if resp.ok:
         print(
             "[확인] API 키가 정상입니다. "
-            "`python briefing.py once` 로 생성을 시도할 수 있습니다.",
+            "`python breaker.py once` 로 생성을 시도할 수 있습니다.",
         )
         return 0
     print(
@@ -458,7 +472,16 @@ def parse_sources(raw: str | None) -> list[str]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Vertex AI / Gemini 기반 한국어 시황 속보 생성기",
+        description=(
+            "Vertex AI / Gemini 기반 한국어 시황 속보 생성기 "
+            "(서브커맨드 생략 시 once)"
+        ),
+        epilog=(
+            "예: python breaker.py\n"
+            "    python breaker.py --print\n"
+            "    python breaker.py loop --once-now"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--model",
@@ -470,17 +493,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=os.environ.get("BRIEFING_SOURCES"),
         help="매체 목록 콤마 구분 (생략 시 기본 10곳)",
     )
+    p.add_argument(
+        "--print",
+        dest="print_only",
+        action="store_true",
+        help="once 실행 시 파일 저장 없이 콘솔만 출력 (기본 명령)",
+    )
 
-    sub = p.add_subparsers(dest="command", required=True)
+    sub = p.add_subparsers(dest="command", required=False)
 
-    p_once = sub.add_parser("once", help="즉시 1회 시황 리포트 생성")
+    p_once = sub.add_parser(
+        "once",
+        help="즉시 1회 시황 리포트 생성 (생략 시에도 동일)",
+    )
     p_once.add_argument(
         "--print",
         dest="print_only",
         action="store_true",
         help="파일로 저장하지 않고 콘솔에만 출력",
     )
-    p_once.set_defaults(func=cmd_once)
+    p_once.set_defaults(func=cmd_once, command="once")
 
     p_loop = sub.add_parser(
         "loop", help="평일 09~15시 KST 매시 정각 자동 생성 (Ctrl+C로 종료)"
@@ -490,13 +522,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="시작 직후 1회 즉시 생성한 뒤 루프로 진입",
     )
-    p_loop.set_defaults(func=cmd_loop)
+    p_loop.set_defaults(func=cmd_loop, command="loop")
 
     p_doctor = sub.add_parser(
         "doctor",
         help="GEMINI_API_KEY가 Gemini(Generative Language) API에서 동작하는지 확인",
     )
-    p_doctor.set_defaults(func=cmd_doctor)
+    p_doctor.set_defaults(func=cmd_doctor, command="doctor")
+
+    p.set_defaults(func=cmd_once, command="once", print_only=False)
 
     return p
 
@@ -505,6 +539,11 @@ def main() -> int:
     configure_stdio_utf8()
     parser = build_arg_parser()
     args = parser.parse_args()
+    if args.command is None:
+        args.func = cmd_once
+        args.command = "once"
+        if not hasattr(args, "print_only"):
+            args.print_only = False
     return args.func(args)
 
 
