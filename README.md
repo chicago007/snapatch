@@ -14,7 +14,7 @@
 
 ```
 snapatch/
-├── app.py                  # Streamlit 진입점 (사이드바 네비게이션)
+├── maingate.py             # Streamlit 진입점 (사이드바 네비게이션)
 ├── snapatch/
 │   ├── bootstrap.py        # vendor 경로 + .env 초기화
 │   └── features/
@@ -65,7 +65,7 @@ copy .env.example .env   # Windows
 ## 실행
 
 ```bash
-python -m streamlit run app.py
+python -m streamlit run maingate.py
 ```
 
 브라우저가 열리면 왼쪽 사이드바에서 기능을 선택해 사용합니다.

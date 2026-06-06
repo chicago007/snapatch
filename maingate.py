@@ -1,6 +1,6 @@
 """snapatch — 주식 분석 통합 웹앱 (Streamlit 진입점).
 
-실행: python -m streamlit run app.py
+실행: python -m streamlit run maingate.py
 """
 
 from __future__ import annotations
