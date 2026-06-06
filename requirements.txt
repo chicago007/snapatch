@@ -1,0 +1,32 @@
+# snapatch 통합 의존성 (breaker / diver / dejavu / match)
+
+# --- 공통 / 웹 ---
+streamlit>=1.35
+python-dotenv>=1.0.1
+requests>=2.32.3
+
+# --- breaker (시황 속보, Gemini) ---
+# google-genai 는 diver 와 공유
+
+# --- diver (네이버 뉴스 + Vertex AI Gemini) ---
+google-genai>=1.16.1
+beautifulsoup4>=4.12.3
+python-dateutil>=2.9.0
+pydantic>=2.7.0
+
+# --- dejavu (같은 종목 과거 유사 패턴) ---
+pykrx>=1.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+PyYAML>=6.0
+dtaidistance>=2.4.0
+stumpy>=1.12.0
+
+# --- match (유사 종목 검색, DTW) ---
+fastdtw>=0.3.4
+tqdm>=4.65
+
+# --- 테스트 (선택) ---
+pytest>=8.2.0

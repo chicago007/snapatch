@@ -1,0 +1,20 @@
+# 환경변수
+.env
+
+# 파이썬
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 생성물 / 캐시
+outputs/
+reports/
+**/output_similarity*/
+**/.matplotlib-cache/
+*.png
+
+# OS / 에디터
+.DS_Store
+.idea/
+.vscode/
