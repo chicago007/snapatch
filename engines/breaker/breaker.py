@@ -11,16 +11,16 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     pip install -r requirements.txt
 
     # 3) 실행 (snapatch 프로젝트 루트에서)
-    python -m snapatch.cli.breaker              # 기본: once (즉시 1회 생성)
-    python -m snapatch.cli.breaker --print      # once + 콘솔만 출력
-    python -m snapatch.cli.breaker once         # 위와 동일
-    python -m snapatch.cli.breaker loop
-    python -m snapatch.cli.breaker doctor
-    python -m snapatch.cli.breaker --model gemini-2.5-flash
+    python -m hub.cli.breaker              # 기본: once (즉시 1회 생성)
+    python -m hub.cli.breaker --print      # once + 콘솔만 출력
+    python -m hub.cli.breaker once         # 위와 동일
+    python -m hub.cli.breaker loop
+    python -m hub.cli.breaker doctor
+    python -m hub.cli.breaker --model gemini-2.5-flash
 
-    # vendor 직접 실행도 가능 (서브커맨드 생략 시 once)
-    python vendor/breaker/breaker.py
-    python vendor/breaker/breaker.py --print
+    # engines 직접 실행도 가능 (서브커맨드 생략 시 once)
+    python engines/breaker/breaker.py
+    python engines/breaker/breaker.py --print
 
 옵션:
     --model     사용할 Gemini 모델 (기본: gemini-2.5-pro)
@@ -28,7 +28,7 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     --print     파일로 저장하지 않고 콘솔에만 출력
     --once-now  loop 모드에서 시작 직후 1회 즉시 생성
 
-생성된 리포트는 ./reports/YYYY-MM-DD_HH-MM_KST.md 로 저장됩니다.
+생성된 리포트는 ./outputs/breaker/YYYY-MM-DD_HH-MM_KST.md 로 저장됩니다.
 """
 
 from __future__ import annotations
@@ -46,8 +46,8 @@ import requests
 
 from prompt import STOCK_BRIEFING_SYSTEM_PROMPT, build_user_prompt
 
-VENDOR_DIR = Path(__file__).resolve().parent
-SNAPATCH_ROOT = VENDOR_DIR.parent.parent
+ENGINE_DIR = Path(__file__).resolve().parent
+SNAPATCH_ROOT = ENGINE_DIR.parent.parent
 
 
 def _load_dotenv_from_project() -> None:
@@ -57,7 +57,7 @@ def _load_dotenv_from_project() -> None:
         return
     # snapatch 루트 .env 우선 (통합 앱 환경)
     load_dotenv(SNAPATCH_ROOT / ".env", override=True)
-    load_dotenv(VENDOR_DIR / ".env", override=False)
+    load_dotenv(ENGINE_DIR / ".env", override=False)
 
 
 _load_dotenv_from_project()
@@ -106,7 +106,13 @@ GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
 
-REPORTS_DIR = SNAPATCH_ROOT / "reports"
+REPORTS_DIR = SNAPATCH_ROOT / "outputs" / "breaker"
+
+# 일시적 서버 오류 — 지수 백오프로 자동 재시도한다.
+TRANSIENT_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+TRANSIENT_MAX_ATTEMPTS = 6
+TRANSIENT_BACKOFF_SEC = 2.0
+TRANSIENT_BACKOFF_CAP_SEC = 20.0
 
 
 @dataclass(frozen=True)
@@ -143,6 +149,15 @@ ACCURATE_PRESET = GeneratePreset(
 # ---------------------------------------------------------------------------
 
 
+def format_elapsed(seconds: float) -> str:
+    """소요 시간을 사람이 읽기 좋은 한국어 문자열로."""
+    if seconds < 60:
+        return f"{seconds:.1f}초"
+    minutes = int(seconds // 60)
+    remainder = seconds % 60
+    return f"{minutes}분 {remainder:.1f}초"
+
+
 def now_kst_label(dt: datetime | None = None) -> str:
     """한국시간 'YYYY-MM-DD HH:mm KST' 라벨 생성."""
     if dt is None:
@@ -152,6 +167,77 @@ def now_kst_label(dt: datetime | None = None) -> str:
     return dt.strftime("%Y-%m-%d %H:%M KST")
 
 
+def _notify(message: str) -> None:
+    """진단 메시지를 안전하게 출력.
+
+    Streamlit/Windows 등 일부 실행 환경에서는 sys.stderr 쓰기가
+    OSError([Errno 22] 등)를 던질 수 있으므로 모든 예외를 흡수한다.
+    """
+    try:
+        sys.stderr.write(message)
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001 - 진단 출력 실패는 무시
+        pass
+
+
+def _post_with_retry(
+    url: str,
+    headers: dict[str, str],
+    body: dict,
+    timeout: int,
+) -> requests.Response:
+    """일시적 오류(429/5xx)와 네트워크 예외에 대해 지수 백오프로 재시도."""
+    payload = json.dumps(body)
+    last_exc: Exception | None = None
+
+    for attempt in range(1, TRANSIENT_MAX_ATTEMPTS + 1):
+        try:
+            resp = requests.post(
+                url, headers=headers, data=payload, timeout=timeout
+            )
+        except requests.exceptions.RequestException as exc:
+            last_exc = exc
+            if attempt >= TRANSIENT_MAX_ATTEMPTS:
+                raise RuntimeError(
+                    f"Gemini API 요청 실패(네트워크): {exc}"
+                ) from exc
+            time.sleep(TRANSIENT_BACKOFF_SEC * attempt)
+            continue
+
+        if (
+            resp.status_code in TRANSIENT_STATUS_CODES
+            and attempt < TRANSIENT_MAX_ATTEMPTS
+        ):
+            wait = _retry_after_seconds(resp) or min(
+                TRANSIENT_BACKOFF_SEC * (2 ** (attempt - 1)),
+                TRANSIENT_BACKOFF_CAP_SEC,
+            )
+            _notify(
+                f"[retry {attempt}/{TRANSIENT_MAX_ATTEMPTS - 1}] "
+                f"Gemini API {resp.status_code} - waiting {wait:.0f}s\n"
+            )
+            time.sleep(wait)
+            continue
+
+        return resp
+
+    # 모든 시도 소진 (네트워크 예외 마지막 케이스 방어)
+    if last_exc is not None:
+        raise RuntimeError(f"Gemini API 요청 실패: {last_exc}") from last_exc
+    return resp
+
+
+def _retry_after_seconds(resp: requests.Response) -> float | None:
+    """Retry-After 헤더(초)가 있으면 파싱해서 반환."""
+    value = resp.headers.get("Retry-After")
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        return None
+
+
 def generate_briefing(
     api_key: str,
     model: str,
@@ -159,7 +245,7 @@ def generate_briefing(
     now_kst: str | None = None,
     timeout: int = 120,
     use_google_search: bool = True,
-    max_output_tokens: int = 4096,
+    max_output_tokens: int = 8192,
     temperature: float = 0.4,
     extra_user_instruction: str | None = None,
 ) -> str:
@@ -212,9 +298,8 @@ def generate_briefing(
         # 최신 뉴스를 위해 Google Search Grounding 활성화
         body["tools"] = [{"google_search": {}}]
 
-    resp = requests.post(
-        url, headers=headers, data=json.dumps(body), timeout=timeout
-    )
+    resp = _post_with_retry(url, headers, body, timeout)
+
     if not resp.ok:
         body_preview = resp.text[:500]
         hint = ""
@@ -236,6 +321,13 @@ def generate_briefing(
                 "`gemini-2.5-flash`로 바꿔 보세요. "
                 "사용량: https://ai.dev/rate-limit"
             )
+        elif resp.status_code in (500, 502, 503, 504):
+            hint = (
+                "\n\n[안내] 모델 서버가 일시적으로 과부하 상태입니다(503/UNAVAILABLE). "
+                f"자동으로 {TRANSIENT_MAX_ATTEMPTS}회 재시도했지만 실패했습니다. "
+                "잠시 후 다시 시도하거나, `.env`의 GEMINI_MODEL을 "
+                "`gemini-2.5-flash` 처럼 더 가벼운 모델로 바꿔 보세요."
+            )
         raise RuntimeError(f"Gemini API {resp.status_code}: {body_preview}{hint}")
 
     data = resp.json()
@@ -243,6 +335,13 @@ def generate_briefing(
     parts = (candidate.get("content") or {}).get("parts") or []
     text = "\n".join(p.get("text", "") for p in parts if p.get("text"))
     if not text.strip():
+        finish = candidate.get("finishReason")
+        if finish == "MAX_TOKENS":
+            raise RuntimeError(
+                "모델이 본문을 생성하기 전에 출력 토큰 한도에 도달했습니다 "
+                "(thinking 토큰이 예산을 소진). max_output_tokens 를 늘리거나 "
+                "더 가벼운 설정으로 다시 시도하세요."
+            )
         raise RuntimeError(f"빈 응답: {json.dumps(data)[:500]}")
 
     # grounding 인용을 본문 끝에 부가
@@ -389,17 +488,20 @@ def cmd_once(args: argparse.Namespace) -> int:
     print(f"매체: {', '.join(sources)}\n")
     print("리포트 생성 중… (보통 20~40초 소요)\n")
 
+    started_at = time.perf_counter()
     try:
         content = generate_briefing(api_key, args.model, sources, label)
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
         return 1
+    elapsed = time.perf_counter() - started_at
 
     print(content)
 
     if not args.print_only:
         path = save_report(content, when)
         print(f"\n[저장] {path}")
+    print(f"\n소요 시간: {format_elapsed(elapsed)}")
     return 0
 
 
@@ -454,14 +556,17 @@ def run_one(
     when = datetime.now(tz=KST)
     label = label_override or now_kst_label(when)
     print_header(label)
+    started_at = time.perf_counter()
     try:
         content = generate_briefing(api_key, model, sources, label)
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
         return
+    elapsed = time.perf_counter() - started_at
     print(content)
     path = save_report(content, when)
-    print(f"\n[저장] {path}\n")
+    print(f"\n[저장] {path}")
+    print(f"소요 시간: {format_elapsed(elapsed)}\n")
 
 
 def parse_sources(raw: str | None) -> list[str]:

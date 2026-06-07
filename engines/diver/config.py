@@ -6,13 +6,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-VENDOR_DIR = Path(__file__).resolve().parent
-SNAPATCH_ROOT = VENDOR_DIR.parent.parent
+ENGINE_DIR = Path(__file__).resolve().parent
+SNAPATCH_ROOT = ENGINE_DIR.parent.parent
 
 
 def _load_dotenv_from_project() -> None:
     load_dotenv(SNAPATCH_ROOT / ".env", override=True)
-    load_dotenv(VENDOR_DIR / ".env", override=False)
+    load_dotenv(ENGINE_DIR / ".env", override=False)
 
 
 _load_dotenv_from_project()
@@ -85,3 +85,9 @@ class Settings:
     def validate_vertex(self) -> None:
         if not self.google_cloud_project:
             raise ValueError("GOOGLE_CLOUD_PROJECT 환경변수가 필요합니다.")
+
+
+def diver_output_dir() -> Path:
+    out = SNAPATCH_ROOT / "outputs" / "diver"
+    out.mkdir(parents=True, exist_ok=True)
+    return out

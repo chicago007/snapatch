@@ -6,12 +6,16 @@ import time
 
 import streamlit as st
 
-from snapatch import bootstrap
+from hub import bootstrap
 
 bootstrap.init()
 
 from config import Settings  # noqa: E402
-from diver import _to_dict, format_text  # noqa: E402
+from diver import (  # noqa: E402
+    SavedReports,
+    format_md,
+    save_result_files,
+)
 from pipeline import run_pipeline  # noqa: E402
 
 
@@ -74,6 +78,7 @@ def render() -> None:
         value=settings.default_max_days,
     )
     fast = c3.toggle("빠른 모드 (원문 생략)", value=settings.skip_content)
+    save_report = st.checkbox("outputs/diver 폴더에 저장", value=True)
 
     if not run:
         return
@@ -98,8 +103,24 @@ def render() -> None:
     elapsed = time.perf_counter() - started_at
     st.success(f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)})")
 
-    tab_text, tab_json = st.tabs(["요약 보기", "JSON"])
-    with tab_text:
-        st.text(format_text(result))
-    with tab_json:
-        st.json(_to_dict(result))
+    saved: SavedReports | None = None
+    if save_report:
+        try:
+            saved = save_result_files(result, query.strip())
+            st.caption(f"저장 완료: `{saved.md_path}`")
+        except OSError as exc:
+            st.warning(f"결과 파일 저장 실패: {exc}", icon="⚠️")
+
+    report_md = format_md(result)
+    st.markdown(report_md)
+
+    st.download_button(
+        "Markdown 다운로드",
+        data=report_md.encode("utf-8"),
+        file_name=(
+            saved.md_path.name if saved is not None else "diver_분석.md"
+        ),
+        mime="text/markdown",
+        use_container_width=True,
+        key="dl_diver_md",
+    )

@@ -2,13 +2,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
-from config import Settings
+from config import Settings, diver_output_dir
 from models import AnalysisResult
 from pipeline import run_pipeline
+
+KST = timezone(timedelta(hours=9))
+
+
+def _safe_slug(query: str, max_len: int = 32) -> str:
+    slug = re.sub(r"[^\w가-힣]+", "_", query.strip(), flags=re.UNICODE)
+    slug = slug.strip("_")
+    return slug[:max_len] if slug else "query"
+
+
+@dataclass(frozen=True)
+class SavedReports:
+    md_path: Path
+
+
+def save_result_files(
+    result: AnalysisResult | dict[str, Any],
+    query: str,
+    when: datetime | None = None,
+) -> SavedReports:
+    """분석 결과를 outputs/diver/ 에 Markdown 으로 저장."""
+    when = when or datetime.now(tz=KST)
+    slug = _safe_slug(query)
+    tag = when.astimezone(KST).strftime("%Y-%m-%d_%H-%M_KST")
+    md_path = (diver_output_dir() / f"{slug}_{tag}").with_suffix(".md")
+    md_path.write_text(format_md(result), encoding="utf-8")
+    return SavedReports(md_path=md_path)
 
 
 def _to_dict(result: AnalysisResult | dict[str, Any]) -> dict[str, Any]:
@@ -220,6 +251,145 @@ def format_text(result: AnalysisResult | dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _md_bullets(items: Any, empty: str = "(없음)") -> list[str]:
+    if not isinstance(items, list):
+        if items in (None, ""):
+            return [f"- {empty}"]
+        return [f"- {items}"]
+    if not items:
+        return [f"- {empty}"]
+    return [f"- {item}" for item in items]
+
+
+def format_md(result: AnalysisResult | dict[str, Any]) -> str:
+    """분석 결과를 Markdown 문서 문자열로 변환."""
+    data = _to_dict(result)
+    query = data.get("query", "")
+    searched_days = data.get("searched_days", "")
+    weekday = data.get("analysis_reference_weekday_kst", "")
+    ref_dt = data.get("analysis_reference_datetime_kst", "")
+
+    md: list[str] = [
+        f"# {query} 뉴스 분석",
+        "",
+        f"- **기준 시각**: {ref_dt} ({weekday})",
+        f"- **검색 기간**: 최근 {searched_days}일",
+    ]
+
+    ki = data.get("keyword_interpretation") or {}
+    md += ["", "## 1. 키워드 해석"]
+    if ki:
+        md += [
+            f"- **분류**: {ki.get('classification', '')}",
+            f"- **정의**: {ki.get('definition', '')}",
+            f"- **배경**: {ki.get('background', '')}",
+        ]
+    else:
+        md += ["- (없음)"]
+
+    md += ["", "## 2. 뉴스 스캔"]
+    news = data.get("news_scan_results")
+    if isinstance(news, list) and news:
+        for item in news:
+            if not isinstance(item, dict):
+                continue
+            md += [
+                f"### [{item.get('id', '?')}] {item.get('headline', '')}",
+                f"- 날짜: {item.get('date', '')} · 출처: {item.get('source', '')}"
+                f" · 감성: {item.get('sentiment', '')}",
+                f"- 요약: {item.get('summary', '')}",
+                "",
+            ]
+    else:
+        md += ["(수집된 뉴스 없음)"]
+
+    md += ["", "## 3. 팩트 분석"] + _md_bullets(data.get("fact_analysis"))
+
+    mp = data.get("market_psychology_analysis") or {}
+    md += ["", "## 4. 시장심리 분석"]
+    if mp:
+        md += [f"- **공포-탐욕 지수**: {mp.get('fear_greed_index', '')}"]
+        if mp.get("summary"):
+            md += [f"- **요약**: {mp.get('summary')}"]
+        md += ["- **심리 편향**:"]
+        md += [f"  - {b}" for b in (mp.get("biases") or ["(없음)"])]
+    else:
+        md += ["- (없음)"]
+
+    md += [
+        "",
+        "## 5. 내러티브 분석",
+        str(data.get("narrative_analysis") or "(없음)"),
+    ]
+
+    mi = data.get("market_impact_analysis") or {}
+    md += ["", "## 6. 시장영향 분석"]
+    if mi:
+        md += ["**직접 영향**"] + _md_bullets(mi.get("direct_impact"))
+        md += ["", "**간접 영향**"] + _md_bullets(mi.get("indirect_impact"))
+    else:
+        md += ["- (없음)"]
+
+    ro = data.get("risk_opportunity_matrix") or {}
+    md += ["", "## 7. 리스크 & 기회 매트릭스"]
+    if ro:
+        for title, key in (
+            ("상승요인", "upside_factors"),
+            ("하락요인", "downside_factors"),
+            ("블랙스완", "black_swans"),
+        ):
+            md += [f"**{title}**"] + _md_bullets(ro.get(key)) + [""]
+    else:
+        md += ["- (없음)"]
+
+    sc = data.get("investment_scenarios") or {}
+    md += ["", "## 8. 투자 시나리오"]
+    if sc:
+        md += [
+            f"- **강세**: {sc.get('bull_scenario', '')}",
+            f"- **기본**: {sc.get('base_scenario', '')}",
+            f"- **약세**: {sc.get('bear_scenario', '')}",
+        ]
+    else:
+        md += ["- (없음)"]
+
+    ap = data.get("investment_action_plan") or {}
+    md += ["", "## 9. 투자 액션 플랜"]
+    if ap:
+        md += [
+            f"- **진입**: {ap.get('entry_timing', '')}",
+            f"- **수익실현**: {ap.get('profit_taking', '')}",
+            f"- **손절**: {ap.get('stop_loss', '')}",
+            "- **모니터링 지표**:",
+        ]
+        md += [f"  - {i}" for i in (ap.get("monitoring_indicators") or ["(없음)"])]
+    else:
+        md += ["- (없음)"]
+
+    fa = data.get("final_assessment") or {}
+    md += ["", "## 10. 최종 평가"]
+    if fa:
+        md += [f"- **핵심 메시지**: {fa.get('one_liner_message', '')}", "", "**강점**"]
+        md += [f"- {i}" for i in (fa.get("strengths") or ["(없음)"])]
+        md += ["", "**약점**"]
+        md += [f"- {i}" for i in (fa.get("weaknesses") or ["(없음)"])]
+        md += ["", f"- **최종 권고**: {fa.get('final_recommendation', '')}"]
+    else:
+        md += ["- (없음)"]
+
+    md += [
+        "",
+        "## 11. 메타",
+        f"- 분석 완료: {data.get('analysis_completion_datetime_kst', '')}",
+        f"- 신뢰도: {data.get('reliability_grade', '')}",
+        f"- 다음 모니터링: {data.get('next_monitoring_date', '')}",
+    ]
+    if data.get("monitoring_reason"):
+        md += [f"- 사유: {data.get('monitoring_reason')}"]
+
+    return "\n".join(md)
+
+
 def _format_elapsed(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds:.1f}초"
@@ -290,6 +460,11 @@ def main():
         default=settings.default_output_format,
         help="출력 형식",
     )
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="outputs/diver/ 에 파일 저장하지 않음",
+    )
     args = parser.parse_args()
 
     started_at = time.perf_counter()
@@ -306,10 +481,16 @@ def main():
         analyzed, _ = result
         print_result(analyzed, args.format)
         print_elapsed(elapsed, args.format)
+        if not args.no_save:
+            saved = save_result_files(analyzed, args.query)
+            print(f"\n[저장] {saved.md_path}")
         return
 
     print_result(result, args.format)
     print_elapsed(elapsed, args.format)
+    if not args.no_save:
+        saved = save_result_files(result, args.query)
+        print(f"\n[저장] {saved.md_path}")
 
 
 if __name__ == "__main__":

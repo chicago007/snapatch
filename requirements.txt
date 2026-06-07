@@ -22,7 +22,6 @@ scipy>=1.10.0
 matplotlib>=3.7.0
 PyYAML>=6.0
 dtaidistance>=2.4.0
-stumpy>=1.12.0
 
 # --- match (유사 종목 검색, DTW) ---
 fastdtw>=0.3.4

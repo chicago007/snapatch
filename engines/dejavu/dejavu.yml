@@ -1,0 +1,37 @@
+# dejavu.py — 6트랙 독립 (주가 z / 로그 / 주가 MA z)
+
+ticker: "069500"
+data_start: "20000101"
+target_date: today
+
+observation_days: 60
+top_n_similar: 5
+forward_monitoring_days: 40
+similarity_scan_step_trading_days: 10
+similarity_scan_description: "유사 구간 후보: 거래일 기준 시작 간격 {step}일 (워밍업 이후만)"
+
+similarity_methods:
+  - pearson
+  - dtw
+
+pipeline_dejavu:
+  enabled: true
+  # 이동평균 기간(거래일) — 3-1, 3-2 트랙에 사용
+  ma_windows: [5, 10, 20]
+  min_warmup_trading_days: auto
+  emit_tracks: true
+  tracks:
+    price_zscore_pearson: true   # 1-1 주가 z-score · Pearson
+    price_zscore_dtw: true       # 1-2 주가 z-score · DTW
+    log_pearson: true            # 2-1 로그수익률 · Pearson
+    log_zscore_dtw: true         # 2-2 로그수익률 z-score · DTW
+    ma_zscore_pearson: true      # 3-1 주가 MA → z-score · Pearson
+    ma_zscore_dtw: true          # 3-2 주가 MA → z-score · DTW
+
+output_dir: outputs/dejavu
+chart_filename_prefix: pattern_comparison_dejavu
+save_table_csv: false
+save_table_txt: false
+save_table_md: true
+use_dtw: true
+price_column: 종가
