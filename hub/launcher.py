@@ -115,19 +115,14 @@ def _run_engine_cli(engine: str) -> int:
 
     if engine == "diver":
         print()
-        print("  생성 모드를 선택하세요.\n")
-        print("  [1] 빠름 (원문 생략 + 간략 리포트)")
-        print("  [2] 심층 (원문 포함 + 전체 분석, 권장)")
-        print()
-        mode = _prompt_choice("번호 입력: ", {"1", "2"})
-        print()
         query = input("검색 키워드를 입력하세요: ").strip()
         if not query:
             print("키워드가 비어 있어 취소합니다.")
             return 0
         cmd.extend(["--query", query])
-        if mode == "1":
-            cmd.append("--fast")
+        skip = input("원문 생략할까요? (y/N): ").strip().lower()
+        if skip in ("y", "yes"):
+            cmd.append("--skip-content")
 
     print()
     return subprocess.run(cmd, cwd=_PROJECT_ROOT).returncode

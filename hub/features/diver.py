@@ -41,27 +41,6 @@ def _format_elapsed(seconds: float) -> str:
     return f"{minutes}분 {remainder:.1f}초"
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def _cached_run_pipeline(
-    query: str,
-    target_count: int,
-    max_days: int,
-    skip_content: bool,
-    fast_analysis: bool,
-) -> dict:
-    result = run_pipeline(
-        query=query,
-        target_count=target_count,
-        max_days=max_days,
-        debug=False,
-        skip_content=skip_content,
-        fast_analysis=fast_analysis,
-    )
-    if not isinstance(result, dict):
-        raise TypeError("diver 분석 결과는 dict 여야 합니다.")
-    return result
-
-
 def render() -> None:
     st.header("🔎 diver — 키워드 뉴스 분석")
     st.caption("네이버 뉴스 검색 + Gemini 구조화 분석으로 키워드를 심층 분석합니다.")
@@ -92,7 +71,7 @@ def render() -> None:
         st.write("")
         run = st.button("분석", type="primary", use_container_width=True)
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3 = st.columns(3)
     target_count = c1.number_input(
         "목표 기사 수",
         min_value=1,
@@ -109,11 +88,6 @@ def render() -> None:
         "원문 생략 (수집만 빠름)",
         value=False,
     )
-    compact_report = c4.toggle(
-        "간략 리포트 (짧은 문장)",
-        value=False,
-        help="심층 분석(기본)은 팩트·시나리오·액션플랜까지 모두 생성합니다.",
-    )
     save_report = st.checkbox("outputs/diver 폴더에 저장", value=True)
 
     if not run:
@@ -123,24 +97,21 @@ def render() -> None:
         return
 
     started_at = time.perf_counter()
-    with st.spinner(f"'{query}' 뉴스 수집 및 3단계 심층 분석 중..."):
+    with st.spinner(f"'{query}' 뉴스 수집/분석 중..."):
         try:
-            result = _cached_run_pipeline(
-                query.strip(),
-                int(target_count),
-                int(max_days),
-                bool(skip_content),
-                bool(compact_report),
+            result = run_pipeline(
+                query=query.strip(),
+                target_count=int(target_count),
+                max_days=int(max_days),
+                debug=False,
+                skip_content=bool(skip_content),
             )
         except Exception as exc:  # noqa: BLE001
             st.error(f"분석 실패: {exc}", icon="🚫")
             return
 
     elapsed = time.perf_counter() - started_at
-    cache_note = " (캐시)" if elapsed < 1.0 else ""
-    st.success(
-        f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)}{cache_note})",
-    )
+    st.success(f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)})")
 
     saved: SavedReports | None = None
     if save_report:

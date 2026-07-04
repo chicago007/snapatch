@@ -452,7 +452,7 @@ def main():
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="빠른 실행 모드(원문 생략 + 축소 분석 스키마)",
+        help="원문 생략 (--skip-content 와 동일)",
     )
     parser.add_argument(
         "--format",
@@ -474,7 +474,6 @@ def main():
         max_days=args.max_days,
         debug=args.debug,
         skip_content=args.skip_content or args.fast,
-        fast_analysis=args.fast,
     )
     elapsed = time.perf_counter() - started_at
 
