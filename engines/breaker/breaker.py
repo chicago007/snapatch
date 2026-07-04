@@ -764,7 +764,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--fast",
         action="store_true",
-        help="빠른 모드 (flash, Google 검색 생략, ~5~10초)",
+        help="빠른 모드 (flash, Google 검색 생략, 약 5-10초)",
     )
     p.add_argument(
         "--model",

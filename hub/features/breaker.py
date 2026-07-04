@@ -80,9 +80,9 @@ def render() -> None:
             "생성 모드",
             options=["fast", "accurate"],
             format_func=lambda value: (
-                "빠름 (flash, 검색 생략, ~5~10초)"
+                "빠름 (flash, 검색 생략, 약 5-10초)"
                 if value == "fast"
-                else "정확 (pro, Google 검색, ~20~40초)"
+                else "정확 (pro, Google 검색, 약 20-40초)"
             ),
             horizontal=True,
             key="breaker_fast",
