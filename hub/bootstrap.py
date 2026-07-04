@@ -8,6 +8,7 @@ Streamlit Cloud처럼 진입점이 하위 파일일 때도 `engines`/`hub` 패�
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -46,5 +47,9 @@ def init() -> None:
         load_dotenv(_PROJECT_ROOT / ".env")
     except ImportError:
         pass
+
+    mpl_dir = _PROJECT_ROOT / ".mplconfig"
+    mpl_dir.mkdir(exist_ok=True)
+    os.environ.setdefault("MPLCONFIGDIR", str(mpl_dir))
 
     _initialized = True

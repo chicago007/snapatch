@@ -41,10 +41,20 @@ from scipy.stats import pearsonr
 try:
     from dtaidistance import dtw as dtw_mod
 
-    _HAS_DTW = True
+    _DTW_BACKEND = "dtaidistance"
 except ImportError:
     dtw_mod = None  # type: ignore[misc, assignment]
-    _HAS_DTW = False
+    try:
+        from fastdtw import fastdtw as _fastdtw
+        from scipy.spatial.distance import euclidean as _euclidean
+
+        _DTW_BACKEND = "fastdtw"
+    except ImportError:
+        _fastdtw = None  # type: ignore[misc, assignment]
+        _euclidean = None  # type: ignore[misc, assignment]
+        _DTW_BACKEND = None
+
+_HAS_DTW = _DTW_BACKEND is not None
 
 # 시인성 개선 차트 — 순위별 고정 색·굵기
 RANK_COLORS = ("#2563EB", "#EA580C", "#16A34A", "#9333EA", "#DC2626")
@@ -284,11 +294,16 @@ def forward_return_pct(values: np.ndarray, end_idx: int, horizon: int) -> float:
 
 
 def dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
-    if not _HAS_DTW or dtw_mod is None:
+    if not _HAS_DTW:
         return float("nan")
     x = a.astype(np.double).reshape(-1)
     y = b.astype(np.double).reshape(-1)
-    return float(dtw_mod.distance(x, y))
+    if _DTW_BACKEND == "dtaidistance" and dtw_mod is not None:
+        return float(dtw_mod.distance(x, y))
+    if _DTW_BACKEND == "fastdtw" and _fastdtw is not None and _euclidean is not None:
+        dist, _ = _fastdtw(x.reshape(-1, 1), y.reshape(-1, 1), dist=_euclidean)
+        return float(dist)
+    return float("nan")
 
 
 def max_hist_start(close_len: int, obs: int, target_start_idx: int) -> int:
@@ -759,7 +774,10 @@ def run_pipeline(
             print(f"[건너뜀] {spec.label} — tracks.{spec.key}: false")
             continue
         if spec.needs_dtw and not ctx.use_dtw:
-            print(f"[건너뜀] {spec.label} — DTW 비활성(use_dtw 또는 dtaidistance)")
+            print(
+                f"[건너뜀] {spec.label} — DTW 비활성 "
+                "(dtaidistance/fastdtw 미설치 또는 use_dtw=false)"
+            )
             continue
         if spec.key.startswith("ma_zscore") and not ctx.ma_windows:
             print(f"[건너뜀] {spec.label} — 유효한 ma_windows 없음")

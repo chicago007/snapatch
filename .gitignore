@@ -15,6 +15,7 @@ venv/
 # 생성물 / 캐시
 outputs/
 reports/
+.mplconfig/
 engines/breaker/reports/
 engines/match/output/
 **/output_dejavu/

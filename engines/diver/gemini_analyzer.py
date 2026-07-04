@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List
@@ -326,6 +327,36 @@ class GeminiNewsAnalyzer:
             f"{json.dumps(compact_news, ensure_ascii=False)}"
         )
 
+    @staticmethod
+    def _parse_json_response(text: str) -> dict[str, Any]:
+        raw = (text or "").strip()
+        if not raw:
+            raise ValueError("LLM 응답이 비어 있습니다.")
+        if raw.startswith("```"):
+            raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+            raw = re.sub(r"\s*```\s*$", "", raw)
+
+        candidates = [raw]
+        match = re.search(r"\{[\s\S]*\}", raw)
+        if match and match.group(0) != raw:
+            candidates.append(match.group(0))
+
+        last_exc: json.JSONDecodeError | None = None
+        for candidate in candidates:
+            try:
+                payload = json.loads(candidate)
+            except json.JSONDecodeError as exc:
+                last_exc = exc
+                continue
+            if isinstance(payload, dict):
+                return payload
+            raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
+
+        preview = raw[:500].replace("\n", " ")
+        raise ValueError(
+            f"LLM JSON 파싱 실패: {last_exc}. 응답 앞부분: {preview}"
+        ) from last_exc
+
     def analyze(
         self,
         query: str,
@@ -346,21 +377,30 @@ class GeminiNewsAnalyzer:
             for item in news_items
         ]
         schema = self._fast_schema() if fast else self._schema()
-        response = self.client.models.generate_content(
-            model=self.settings.vertex_model,
-            contents=self._build_prompt(
-                query,
-                searched_days,
-                compact_news,
-                fast=fast,
-            ),
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_json_schema=schema,
-                max_output_tokens=2048 if fast else 4096,
-            ),
+        prompt = self._build_prompt(
+            query,
+            searched_days,
+            compact_news,
+            fast=fast,
         )
-        payload = json.loads(response.text)
-        if not isinstance(payload, dict):
-            raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
-        return payload
+        last_error: Exception | None = None
+        for attempt in range(2):
+            response = self.client.models.generate_content(
+                model=self.settings.vertex_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_json_schema=schema,
+                    max_output_tokens=2048 if fast else 4096,
+                ),
+            )
+            try:
+                return self._parse_json_response(response.text)
+            except ValueError as exc:
+                last_error = exc
+                if attempt == 0:
+                    continue
+                raise
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("LLM 분석에 실패했습니다.")

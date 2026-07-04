@@ -23,7 +23,7 @@ pandas>=2.0.0,<2.3
 scipy==1.14.1
 matplotlib>=3.7.0,<3.10
 PyYAML>=6.0
-# dtaidistance: Cloud에서 C 빌드 실패 가능 → requirements-dejavu-extra.txt (로컬 DTW용)
+dtaidistance==2.3.13
 
 # --- match (유사 종목 검색, DTW) ---
 fastdtw>=0.3.4

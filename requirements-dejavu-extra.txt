@@ -1,3 +1,3 @@
-# dejavu DTW 트랙용 (로컬 개발). Streamlit Cloud 배포에는 불필요.
+# dejavu DTW — dtaidistance 는 requirements.txt 에 포함됨. 로컬 재설치:
+#   pip install -r requirements.txt
 -r requirements.txt
-dtaidistance>=2.4.0

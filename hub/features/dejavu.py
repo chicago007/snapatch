@@ -99,6 +99,17 @@ def render() -> None:
         "6트랙 독립 분석 (주가 z / 로그수익률 / MA z × Pearson·DTW). "
         "관찰 구간과 닮은 과거 구간의 이후 수익률을 요약합니다.",
     )
+    if not dejavu._HAS_DTW:
+        st.warning(
+            "DTW 트랙(1-2, 2-2, 3-2)을 사용할 수 없습니다. "
+            "`pip install -r requirements.txt` 로 dtaidistance 또는 fastdtw를 설치하세요.",
+            icon="⚠️",
+        )
+    elif dejavu._DTW_BACKEND == "fastdtw":
+        st.info(
+            "DTW: fastdtw 대체 백엔드 사용 중 (dtaidistance 미설치).",
+            icon="ℹ️",
+        )
 
     c1, c2, c3 = st.columns(3)
     ticker = c1.text_input("종목 코드", value="005930", help="예: 005930 (삼성전자)")
