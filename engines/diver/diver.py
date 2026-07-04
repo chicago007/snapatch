@@ -10,9 +10,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from config import Settings, diver_output_dir
-from models import AnalysisResult
-from pipeline import run_pipeline
+from .config import Settings, diver_output_dir
+from .models import AnalysisResult
+from .pipeline import run_pipeline
 
 KST = timezone(timedelta(hours=9))
 
@@ -452,7 +452,7 @@ def main():
     parser.add_argument(
         "--fast",
         action="store_true",
-        help="빠른 실행 모드(--skip-content와 동일)",
+        help="빠른 실행 모드(원문 생략 + 축소 분석 스키마)",
     )
     parser.add_argument(
         "--format",
@@ -474,6 +474,7 @@ def main():
         max_days=args.max_days,
         debug=args.debug,
         skip_content=args.skip_content or args.fast,
+        fast_analysis=args.fast,
     )
     elapsed = time.perf_counter() - started_at
 

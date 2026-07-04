@@ -1,5 +1,5 @@
-from models import AnalyzedNewsItem
-from post_filter import filter_analyzed_similar_news
+from engines.diver.models import AnalyzedNewsItem
+from engines.diver.post_filter import filter_analyzed_similar_news
 
 
 def _item(url: str, keywords: list[str]) -> AnalyzedNewsItem:

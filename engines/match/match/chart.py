@@ -10,8 +10,8 @@ from pathlib import Path
 import pandas as pd
 from pandas.api.types import is_datetime64_any_dtype
 
-from match.config import FormaConfig
-from match.market_data import clean_data, get_stock_data
+from .config import FormaConfig
+from .market_data import clean_data, get_stock_data
 
 _PKG = Path(__file__).resolve().parent
 _MPL = _PKG / ".matplotlib-cache"

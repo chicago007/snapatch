@@ -12,13 +12,15 @@ from hub import bootstrap
 
 bootstrap.init()
 
-from breaker import (  # noqa: E402
+from engines.breaker.breaker import (  # noqa: E402
+    ACCURATE_PRESET,
     DEFAULT_SOURCES,
+    FAST_PRESET,
     KST,
-    generate_briefing,
     get_gemini_api_key,
     now_kst_label,
     save_report,
+    stream_briefing,
 )
 
 
@@ -70,12 +72,29 @@ def render() -> None:
         os.environ.get("BRIEFING_SOURCES", ", ".join(DEFAULT_SOURCES)),
     )
     st.session_state.setdefault("breaker_save", True)
+    st.session_state.setdefault("breaker_fast", "fast")
 
-    generate = st.button(
-        "속보 생성",
-        type="primary",
-        use_container_width=True,
-    )
+    mode_col, btn_col = st.columns([2, 1])
+    with mode_col:
+        st.radio(
+            "생성 모드",
+            options=["fast", "accurate"],
+            format_func=lambda value: (
+                "빠름 (flash, 검색 생략, ~5~10초)"
+                if value == "fast"
+                else "정확 (pro, Google 검색, ~20~40초)"
+            ),
+            horizontal=True,
+            key="breaker_fast",
+        )
+    with btn_col:
+        st.write("")
+        st.write("")
+        generate = st.button(
+            "속보 생성",
+            type="primary",
+            use_container_width=True,
+        )
     result_area = st.container()
 
     _render_settings()
@@ -83,7 +102,9 @@ def render() -> None:
     if not generate:
         return
 
-    model = st.session_state["breaker_model"].strip()
+    use_fast = st.session_state["breaker_fast"] == "fast"
+    preset = FAST_PRESET if use_fast else ACCURATE_PRESET
+    model = st.session_state["breaker_model"].strip() or preset.model
     raw_sources = st.session_state["breaker_sources"]
     should_save = st.session_state["breaker_save"]
 
@@ -98,16 +119,31 @@ def render() -> None:
 
     with result_area:
         started_at = time.perf_counter()
-        with st.spinner("리포트 생성 중입니다... (보통 20~40초 소요)"):
+        spinner_msg = (
+            "리포트 생성 중입니다... (빠른 모드, 스트리밍)"
+            if use_fast
+            else "리포트 생성 중입니다... (정확 모드, 스트리밍)"
+        )
+        with st.spinner(spinner_msg):
             try:
-                report = generate_briefing(api_key, model, sources, label)
+                report = st.write_stream(
+                    stream_briefing(
+                        api_key,
+                        model,
+                        sources,
+                        label,
+                        timeout=preset.timeout,
+                        use_google_search=preset.use_google_search,
+                        max_output_tokens=preset.max_output_tokens,
+                        temperature=preset.temperature,
+                    ),
+                )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"생성 실패: {exc}", icon="🚫")
                 return
         elapsed = time.perf_counter() - started_at
 
         st.success(f"생성이 완료되었습니다. (소요: {_format_elapsed(elapsed)})")
-        st.markdown(report)
 
         file_name = when.astimezone(KST).strftime("%Y-%m-%d_%H-%M_KST.md")
         st.download_button(

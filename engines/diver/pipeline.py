@@ -3,12 +3,12 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List
 
-from article_parser import extract_article_text
-from config import Settings
-from gemini_analyzer import GeminiNewsAnalyzer
-from models import AnalysisResult, NewsItem
-from naver_client import NaverNewsClient
-from post_filter import filter_analyzed_similar_news
+from .article_parser import extract_article_text
+from .config import Settings
+from .gemini_analyzer import GeminiNewsAnalyzer
+from .models import AnalysisResult, NewsItem
+from .naver_client import NaverNewsClient
+from .post_filter import filter_analyzed_similar_news
 
 
 def fill_article_contents(
@@ -48,6 +48,7 @@ def run_pipeline(
     max_days: int = 30,
     debug: bool = False,
     skip_content: bool | None = None,
+    fast_analysis: bool = False,
 ) -> AnalysisResult | dict[str, Any] | tuple[AnalysisResult | dict[str, Any], List[NewsItem]]:
     settings = Settings()
     naver = NaverNewsClient(settings)
@@ -68,6 +69,7 @@ def run_pipeline(
         query=query,
         news_items=news_items,
         searched_days=searched_days,
+        fast=fast_analysis,
     )
     if settings.post_filter_similar_news and isinstance(result, AnalysisResult):
         dedup_news = filter_analyzed_similar_news(

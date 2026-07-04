@@ -17,22 +17,22 @@ from hub import bootstrap
 
 bootstrap.init()
 
-from match.chart import save_similarity_chart  # noqa: E402
-from match.config import FormaConfig, resolve_ticker_csv  # noqa: E402
-from match.dtw import find_similar_by_close  # noqa: E402
-from match.krx_io import (  # noqa: E402
+from engines.match.match.chart import save_similarity_chart  # noqa: E402
+from engines.match.match.config import FormaConfig, resolve_ticker_csv  # noqa: E402
+from engines.match.match.dtw import find_similar_by_close  # noqa: E402
+from engines.match.match.krx_io import (  # noqa: E402
     apply_krx_login,
     patch_requests_default_timeout,
 )
-from match.main import _run_stage1  # noqa: E402
-from match.market_data import (  # noqa: E402
+from engines.match.match.main import _run_stage1  # noqa: E402
+from engines.match.match.market_data import (  # noqa: E402
     clean_data,
     close_series,
     get_stock_data,
     normalize_ticker,
     read_tickers,
 )
-from match.stage1 import feature_vector, series_to_sax  # noqa: E402
+from engines.match.match.stage1 import feature_vector, series_to_sax  # noqa: E402
 
 _OUTPUT_BASE = bootstrap.match_output_dir()
 

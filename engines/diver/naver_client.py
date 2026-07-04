@@ -10,8 +10,8 @@ from typing import List
 import requests
 from dateutil import tz
 
-from config import Settings
-from models import NewsItem
+from .config import Settings
+from .models import NewsItem
 
 NAVER_NEWS_API = "https://openapi.naver.com/v1/search/news.json"
 KST = tz.gettz("Asia/Seoul")
@@ -114,10 +114,11 @@ class NaverNewsClient:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.settings.validate_naver()
-        self.headers = {
+        self._session = requests.Session()
+        self._session.headers.update({
             "X-Naver-Client-Id": self.settings.naver_client_id,
             "X-Naver-Client-Secret": self.settings.naver_client_secret,
-        }
+        })
 
     def search(self, query: str, display: int = 100, start: int = 1, sort: str = "date") -> List[NewsItem]:
         params = {
@@ -126,7 +127,7 @@ class NaverNewsClient:
             "start": start,
             "sort": sort,
         }
-        res = requests.get(NAVER_NEWS_API, headers=self.headers, params=params, timeout=20)
+        res = self._session.get(NAVER_NEWS_API, params=params, timeout=20)
         res.raise_for_status()
         payload = res.json()
         items = []

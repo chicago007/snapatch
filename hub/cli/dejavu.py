@@ -13,7 +13,7 @@ from hub import bootstrap
 
 bootstrap.init()
 
-import dejavu  # noqa: E402
+from engines.dejavu import dejavu  # noqa: E402
 
 
 if __name__ == "__main__":

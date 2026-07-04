@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from dateutil import tz
 
-from models import NewsItem
-from naver_client import filter_similar_news
+from engines.diver.models import NewsItem
+from engines.diver.naver_client import filter_similar_news
 
 KST = tz.gettz("Asia/Seoul")
 

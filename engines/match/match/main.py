@@ -7,18 +7,18 @@ import time
 from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Callable
 
-from match.chart import save_similarity_chart
-from match.config import FormaConfig
-from match.dtw import find_similar_by_close
-from match.krx_io import patch_requests_default_timeout, prompt_krx_login_if_needed
-from match.market_data import (
+from .chart import save_similarity_chart
+from .config import FormaConfig
+from .dtw import find_similar_by_close
+from .krx_io import patch_requests_default_timeout, prompt_krx_login_if_needed
+from .market_data import (
     clean_data,
     close_series,
     get_stock_data,
     normalize_ticker,
     read_tickers,
 )
-from match.stage1 import (
+from .stage1 import (
     collect_parallel_results,
     feature_vector,
     process_one,

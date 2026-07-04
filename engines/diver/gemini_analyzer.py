@@ -15,8 +15,8 @@ from google import genai
 from google.genai import types
 from google.genai.types import HttpOptions
 
-from config import Settings
-from models import NewsItem
+from .config import Settings
+from .models import NewsItem
 
 
 def _build_genai_client(settings: Settings) -> genai.Client:
@@ -67,6 +67,91 @@ class GeminiNewsAnalyzer:
             5: "토요일",
             6: "일요일",
         }[value.weekday()]
+
+    @staticmethod
+    def _fast_schema() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "analysis_reference_datetime_kst": {"type": "string"},
+                "analysis_reference_weekday_kst": {"type": "string"},
+                "query": {"type": "string"},
+                "searched_days": {"type": "integer"},
+                "keyword_interpretation": {
+                    "type": "object",
+                    "properties": {
+                        "classification": {"type": "string"},
+                        "definition": {"type": "string"},
+                        "background": {"type": "string"},
+                    },
+                    "required": ["classification", "definition", "background"],
+                },
+                "news_scan_results": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "date": {"type": "string"},
+                            "source": {"type": "string"},
+                            "headline": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "sentiment": {"type": "string"},
+                        },
+                        "required": [
+                            "id",
+                            "date",
+                            "source",
+                            "headline",
+                            "summary",
+                            "sentiment",
+                        ],
+                    },
+                },
+                "market_psychology_analysis": {
+                    "type": "object",
+                    "properties": {
+                        "fear_greed_index": {"type": "integer"},
+                        "summary": {"type": "string"},
+                    },
+                    "required": ["fear_greed_index", "summary"],
+                },
+                "risk_opportunity_matrix": {
+                    "type": "object",
+                    "properties": {
+                        "upside_factors": {"type": "array", "items": {"type": "string"}},
+                        "downside_factors": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["upside_factors", "downside_factors"],
+                },
+                "final_assessment": {
+                    "type": "object",
+                    "properties": {
+                        "one_liner_message": {"type": "string"},
+                        "strengths": {"type": "array", "items": {"type": "string"}},
+                        "weaknesses": {"type": "array", "items": {"type": "string"}},
+                        "final_recommendation": {"type": "string"},
+                    },
+                    "required": [
+                        "one_liner_message",
+                        "strengths",
+                        "weaknesses",
+                        "final_recommendation",
+                    ],
+                },
+            },
+            "required": [
+                "analysis_reference_datetime_kst",
+                "analysis_reference_weekday_kst",
+                "query",
+                "searched_days",
+                "keyword_interpretation",
+                "news_scan_results",
+                "market_psychology_analysis",
+                "risk_opportunity_matrix",
+                "final_assessment",
+            ],
+        }
 
     @staticmethod
     def _schema() -> dict[str, Any]:
@@ -214,16 +299,23 @@ class GeminiNewsAnalyzer:
         query: str,
         searched_days: int,
         compact_news: list[dict[str, Any]],
+        *,
+        fast: bool = False,
     ) -> str:
         now_kst = self._get_kst_datetime()
         weekday = self._get_korean_weekday(now_kst)
+        array_rule = (
+            "각 배열은 핵심 항목 1~2개만 채워라.\n"
+            if fast
+            else "모든 배열은 가능한 한 3개 항목 이상 채워라.\n"
+        )
         return (
             f"{self.base_prompt}\n\n"
             "위 prompt.md의 투자 리서치 의도를 따르되, 출력은 아래 고정 JSON "
             "스키마에 맞춘 간략 버전으로 작성하라.\n"
             "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
             "모든 키는 영어 snake_case로만 작성하라.\n"
-            "모든 배열은 가능한 한 3개 항목 이상 채워라.\n"
+            f"{array_rule}"
             "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n"
             "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
             f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
@@ -239,6 +331,8 @@ class GeminiNewsAnalyzer:
         query: str,
         news_items: List[NewsItem],
         searched_days: int,
+        *,
+        fast: bool = False,
     ) -> dict[str, Any]:
         compact_news = [
             {
@@ -251,12 +345,19 @@ class GeminiNewsAnalyzer:
             }
             for item in news_items
         ]
+        schema = self._fast_schema() if fast else self._schema()
         response = self.client.models.generate_content(
             model=self.settings.vertex_model,
-            contents=self._build_prompt(query, searched_days, compact_news),
+            contents=self._build_prompt(
+                query,
+                searched_days,
+                compact_news,
+                fast=fast,
+            ),
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
-                response_json_schema=self._schema(),
+                response_json_schema=schema,
+                max_output_tokens=2048 if fast else 4096,
             ),
         )
         payload = json.loads(response.text)

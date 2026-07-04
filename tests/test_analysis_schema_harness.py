@@ -1,4 +1,4 @@
-from models import AnalysisResult
+from engines.diver.models import AnalysisResult
 
 
 def test_analysis_result_schema_minimal():

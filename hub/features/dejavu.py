@@ -15,7 +15,7 @@ from hub import bootstrap
 
 bootstrap.init()
 
-import dejavu  # noqa: E402
+from engines.dejavu import dejavu  # noqa: E402
 
 _OUTPUT_BASE = bootstrap.dejavu_output_dir()
 

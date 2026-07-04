@@ -13,8 +13,8 @@ from typing import Callable
 from fastdtw import fastdtw
 from scipy.spatial.distance import euclidean
 
-from match.config import FormaConfig
-from match.market_data import clean_data, get_stock_data
+from .config import FormaConfig
+from .market_data import clean_data, get_stock_data
 
 try:
     from tqdm import tqdm as _tqdm_iter

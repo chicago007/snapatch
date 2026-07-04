@@ -1,0 +1,9 @@
+# 커밋 시 줄바꿈을 LF로 정규화해 CRLF 편집 노이즈를 방지한다.
+* text=auto eol=lf
+
+# 바이너리 파일은 변환 제외
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

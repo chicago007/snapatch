@@ -18,9 +18,9 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     python -m hub.cli.breaker doctor
     python -m hub.cli.breaker --model gemini-2.5-flash
 
-    # engines 직접 실행도 가능 (서브커맨드 생략 시 once)
-    python engines/breaker/breaker.py
-    python engines/breaker/breaker.py --print
+    # 모듈 직접 실행도 가능 (서브커맨드 생략 시 once)
+    python -m engines.breaker.breaker
+    python -m engines.breaker.breaker --print
 
 옵션:
     --model     사용할 Gemini 모델 (기본: gemini-2.5-pro)
@@ -38,13 +38,14 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
 
-from prompt import STOCK_BRIEFING_SYSTEM_PROMPT, build_user_prompt
+from .prompt import STOCK_BRIEFING_SYSTEM_PROMPT, build_user_prompt
 
 ENGINE_DIR = Path(__file__).resolve().parent
 SNAPATCH_ROOT = ENGINE_DIR.parent.parent
@@ -104,6 +105,9 @@ DEFAULT_SOURCES = [
 
 GEMINI_ENDPOINT = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+GEMINI_STREAM_ENDPOINT = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent"
 )
 
 REPORTS_DIR = SNAPATCH_ROOT / "outputs" / "breaker"
@@ -238,6 +242,67 @@ def _retry_after_seconds(resp: requests.Response) -> float | None:
         return None
 
 
+def _build_briefing_body(
+    model: str,
+    sources: list[str],
+    now_kst: str,
+    use_google_search: bool,
+    max_output_tokens: int,
+    temperature: float,
+    extra_user_instruction: str | None = None,
+) -> dict:
+    user_prompt = build_user_prompt(now_kst, sources)
+    if extra_user_instruction:
+        user_prompt = f"{user_prompt}\n\n{extra_user_instruction}"
+
+    body = {
+        "systemInstruction": {
+            "role": "system",
+            "parts": [{"text": STOCK_BRIEFING_SYSTEM_PROMPT}],
+        },
+        "contents": [
+            {
+                "role": "user",
+                "parts": [{"text": user_prompt}],
+            }
+        ],
+        "generationConfig": {
+            "temperature": temperature,
+            "topP": 0.9,
+            "maxOutputTokens": max_output_tokens,
+        },
+        "safetySettings": [
+            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+        ],
+    }
+    if use_google_search:
+        body["tools"] = [{"google_search": {}}]
+    return body
+
+
+def _extract_text_from_response(data: dict) -> str:
+    candidate = (data.get("candidates") or [{}])[0]
+    parts = (candidate.get("content") or {}).get("parts") or []
+    return "\n".join(p.get("text", "") for p in parts if p.get("text"))
+
+
+def _append_grounding_chunks(text: str, candidate: dict) -> str:
+    grounding = candidate.get("groundingMetadata") or {}
+    chunks = []
+    for chunk in grounding.get("groundingChunks") or []:
+        web = chunk.get("web") or {}
+        title = web.get("title") or web.get("uri") or ""
+        uri = web.get("uri") or ""
+        if title and uri:
+            chunks.append(f"- [{title}]({uri})")
+    if chunks:
+        text += "\n\n---\n**검색 근거**\n" + "\n".join(chunks[:8])
+    return text
+
+
 def generate_briefing(
     api_key: str,
     model: str,
@@ -267,36 +332,15 @@ def generate_briefing(
         "x-goog-api-key": api_key,
     }
 
-    user_prompt = build_user_prompt(now_kst, sources)
-    if extra_user_instruction:
-        user_prompt = f"{user_prompt}\n\n{extra_user_instruction}"
-
-    body = {
-        "systemInstruction": {
-            "role": "system",
-            "parts": [{"text": STOCK_BRIEFING_SYSTEM_PROMPT}],
-        },
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": user_prompt}],
-            }
-        ],
-        "generationConfig": {
-            "temperature": temperature,
-            "topP": 0.9,
-            "maxOutputTokens": max_output_tokens,
-        },
-        "safetySettings": [
-            {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
-            {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
-        ],
-    }
-    if use_google_search:
-        # 최신 뉴스를 위해 Google Search Grounding 활성화
-        body["tools"] = [{"google_search": {}}]
+    body = _build_briefing_body(
+        model=model,
+        sources=sources,
+        now_kst=now_kst,
+        use_google_search=use_google_search,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        extra_user_instruction=extra_user_instruction,
+    )
 
     resp = _post_with_retry(url, headers, body, timeout)
 
@@ -332,8 +376,7 @@ def generate_briefing(
 
     data = resp.json()
     candidate = (data.get("candidates") or [{}])[0]
-    parts = (candidate.get("content") or {}).get("parts") or []
-    text = "\n".join(p.get("text", "") for p in parts if p.get("text"))
+    text = _extract_text_from_response(data)
     if not text.strip():
         finish = candidate.get("finishReason")
         if finish == "MAX_TOKENS":
@@ -344,19 +387,76 @@ def generate_briefing(
             )
         raise RuntimeError(f"빈 응답: {json.dumps(data)[:500]}")
 
-    # grounding 인용을 본문 끝에 부가
-    grounding = candidate.get("groundingMetadata") or {}
-    chunks = []
-    for c in grounding.get("groundingChunks") or []:
-        web = c.get("web") or {}
-        title = web.get("title") or web.get("uri") or ""
-        uri = web.get("uri") or ""
-        if title and uri:
-            chunks.append(f"- [{title}]({uri})")
-    if chunks:
-        text += "\n\n---\n**검색 근거**\n" + "\n".join(chunks[:8])
+    return _append_grounding_chunks(text, candidate)
 
-    return text
+
+def stream_briefing(
+    api_key: str,
+    model: str,
+    sources: list[str],
+    now_kst: str | None = None,
+    timeout: int = 120,
+    use_google_search: bool = True,
+    max_output_tokens: int = 8192,
+    temperature: float = 0.4,
+    extra_user_instruction: str | None = None,
+) -> Iterator[str]:
+    """Gemini streamGenerateContent 로 리포트를 점진적으로 생성한다."""
+    if not api_key:
+        raise RuntimeError(
+            "API 키가 없습니다. 환경변수 GEMINI_API_KEY 또는 .env에 설정하세요."
+        )
+
+    if now_kst is None:
+        now_kst = now_kst_label()
+
+    url = f"{GEMINI_STREAM_ENDPOINT.format(model=model)}?alt=sse"
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key,
+    }
+    body = _build_briefing_body(
+        model=model,
+        sources=sources,
+        now_kst=now_kst,
+        use_google_search=use_google_search,
+        max_output_tokens=max_output_tokens,
+        temperature=temperature,
+        extra_user_instruction=extra_user_instruction,
+    )
+
+    resp = requests.post(
+        url,
+        headers=headers,
+        data=json.dumps(body),
+        timeout=timeout,
+        stream=True,
+    )
+    if not resp.ok:
+        body_preview = resp.text[:500]
+        raise RuntimeError(f"Gemini API {resp.status_code}: {body_preview}")
+
+    last_candidate: dict | None = None
+    for raw_line in resp.iter_lines(decode_unicode=True):
+        if not raw_line or not raw_line.startswith("data: "):
+            continue
+        payload = raw_line.removeprefix("data: ").strip()
+        if not payload or payload == "[DONE]":
+            continue
+        try:
+            data = json.loads(payload)
+        except json.JSONDecodeError:
+            continue
+        candidate = (data.get("candidates") or [{}])[0]
+        last_candidate = candidate
+        delta = _extract_text_from_response(data)
+        if delta:
+            yield delta
+
+    if last_candidate is not None:
+        grounding = _append_grounding_chunks("", last_candidate).strip()
+        if grounding:
+            yield "\n\n" + grounding
 
 
 def detect_missing_commodities(text: str) -> list[str]:

@@ -15,7 +15,7 @@ from hub import bootstrap
 
 bootstrap.init()
 
-from breaker import main  # noqa: E402
+from engines.breaker.breaker import main  # noqa: E402
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 from datetime import datetime
 from dateutil import tz
 
-from models import AnalysisResult, AnalyzedNewsItem, NewsItem, RelatedKeyword
-from pipeline import fill_article_contents
+from engines.diver.models import AnalysisResult, AnalyzedNewsItem, NewsItem, RelatedKeyword
+from engines.diver.pipeline import fill_article_contents
 
 KST = tz.gettz("Asia/Seoul")
 

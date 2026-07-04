@@ -11,13 +11,13 @@ from hub import bootstrap
 
 bootstrap.init()
 
-from config import Settings  # noqa: E402
-from diver import (  # noqa: E402
+from engines.diver.config import Settings  # noqa: E402
+from engines.diver.diver import (  # noqa: E402
     SavedReports,
     format_md,
     save_result_files,
 )
-from pipeline import run_pipeline  # noqa: E402
+from engines.diver.pipeline import run_pipeline  # noqa: E402
 
 
 def _check_credentials() -> list[str]:
@@ -39,6 +39,27 @@ def _format_elapsed(seconds: float) -> str:
     minutes = int(seconds // 60)
     remainder = seconds % 60
     return f"{minutes}분 {remainder:.1f}초"
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _cached_run_pipeline(
+    query: str,
+    target_count: int,
+    max_days: int,
+    skip_content: bool,
+    fast_analysis: bool,
+) -> dict:
+    result = run_pipeline(
+        query=query,
+        target_count=target_count,
+        max_days=max_days,
+        debug=False,
+        skip_content=skip_content,
+        fast_analysis=fast_analysis,
+    )
+    if not isinstance(result, dict):
+        raise TypeError("diver 분석 결과는 dict 여야 합니다.")
+    return result
 
 
 def render() -> None:
@@ -84,7 +105,10 @@ def render() -> None:
         max_value=90,
         value=settings.default_max_days,
     )
-    fast = c3.toggle("빠른 모드 (원문 생략)", value=settings.skip_content)
+    fast = c3.toggle(
+        "빠른 모드 (원문 생략 + 축소 분석)",
+        value=settings.skip_content,
+    )
     save_report = st.checkbox("outputs/diver 폴더에 저장", value=True)
 
     if not run:
@@ -96,19 +120,22 @@ def render() -> None:
     started_at = time.perf_counter()
     with st.spinner(f"'{query}' 뉴스 수집/분석 중..."):
         try:
-            result = run_pipeline(
-                query=query.strip(),
-                target_count=int(target_count),
-                max_days=int(max_days),
-                debug=False,
-                skip_content=bool(fast),
+            result = _cached_run_pipeline(
+                query.strip(),
+                int(target_count),
+                int(max_days),
+                bool(fast),
+                bool(fast),
             )
         except Exception as exc:  # noqa: BLE001
             st.error(f"분석 실패: {exc}", icon="🚫")
             return
 
     elapsed = time.perf_counter() - started_at
-    st.success(f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)})")
+    cache_note = " (캐시)" if elapsed < 1.0 else ""
+    st.success(
+        f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)}{cache_note})",
+    )
 
     saved: SavedReports | None = None
     if save_report:

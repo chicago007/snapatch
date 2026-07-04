@@ -11,7 +11,7 @@ from hub import bootstrap
 
 bootstrap.init()
 
-from diver import main  # noqa: E402
+from engines.diver.diver import main  # noqa: E402
 
 
 if __name__ == "__main__":

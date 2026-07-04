@@ -11,8 +11,8 @@ from scipy.stats import norm
 
 ProgressCallback = Callable[[int, int], None]
 
-from match.config import FormaConfig
-from match.market_data import clean_data, close_series, get_stock_data
+from .config import FormaConfig
+from .market_data import clean_data, close_series, get_stock_data
 
 _SAX_BP_CACHE: dict[int, np.ndarray] = {}
 
