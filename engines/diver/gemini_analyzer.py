@@ -69,6 +69,43 @@ class GeminiNewsAnalyzer:
             6: "일요일",
         }[value.weekday()]
 
+    _UNCERTAINTY_PHRASE = "불확실함"
+    _TEXT_MAX_LEN = 400
+
+    @classmethod
+    def _sanitize_repetition(cls, text: str, max_len: int | None = None) -> str:
+        if not text:
+            return text
+        limit = max_len if max_len is not None else cls._TEXT_MAX_LEN
+        s = str(text).strip()
+        s = re.sub(
+            rf"(?:{re.escape(cls._UNCERTAINTY_PHRASE)}[.\s]*){{2,}}",
+            f"{cls._UNCERTAINTY_PHRASE}. ",
+            s,
+        )
+        s = re.sub(r"(.{1,40}?)(?:\1){4,}", r"\1", s)
+        s = re.sub(r"\s{2,}", " ", s).strip()
+        if len(s) > limit:
+            cut = s[:limit]
+            if " " in cut[max(limit // 2, 1) :]:
+                cut = cut[: cut.rfind(" ", 0, limit)]
+            s = cut.rstrip(".,; ") + "…"
+        return s
+
+    @classmethod
+    def _sanitize_payload(cls, data: dict[str, Any]) -> dict[str, Any]:
+        def walk(obj: Any) -> Any:
+            if isinstance(obj, str):
+                return cls._sanitize_repetition(obj)
+            if isinstance(obj, list):
+                return [walk(item) for item in obj]
+            if isinstance(obj, dict):
+                return {key: walk(value) for key, value in obj.items()}
+            return obj
+
+        cleaned = walk(data)
+        return cleaned if isinstance(cleaned, dict) else data
+
     def _build_prompt(
         self,
         query: str,
@@ -103,7 +140,7 @@ class GeminiNewsAnalyzer:
             "모든 키는 영어 snake_case로만 작성하라.\n"
             f"{depth_rule}"
             f"{length_rule}"
-            "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n"
+            "불확실한 내용은 '불확실함'이라 한 번만 표기하고, 같은 단어·문장을 반복하지 마라.\n"
             "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
             f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
             f"analysis_reference_weekday_kst: {weekday}\n"
@@ -163,7 +200,7 @@ class GeminiNewsAnalyzer:
             "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
             f"{depth}"
             "문자열 필드는 한글 기준 250자 이내.\n"
-            "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n\n"
+            "불확실한 내용은 '불확실함'이라 한 번만 표기하고, 같은 단어·문장을 반복하지 마라.\n\n"
             f"analysis_completion_datetime_kst: {now_kst.isoformat()}\n"
             "phase1_context:\n"
             f"{json.dumps(context, ensure_ascii=False)}\n\n"
@@ -241,7 +278,7 @@ class GeminiNewsAnalyzer:
                     },
                     "required": ["fear_greed_index", "summary", "biases"],
                 },
-                "narrative_analysis": {"type": "string"},
+                "narrative_analysis": {"type": "string", "maxLength": 500},
                 "market_impact_analysis": {
                     "type": "object",
                     "properties": {
@@ -262,9 +299,9 @@ class GeminiNewsAnalyzer:
                 "investment_scenarios": {
                     "type": "object",
                     "properties": {
-                        "bull_scenario": {"type": "string"},
-                        "base_scenario": {"type": "string"},
-                        "bear_scenario": {"type": "string"},
+                        "bull_scenario": {"type": "string", "maxLength": 400},
+                        "base_scenario": {"type": "string", "maxLength": 400},
+                        "bear_scenario": {"type": "string", "maxLength": 400},
                     },
                     "required": [
                         "bull_scenario",
@@ -395,7 +432,7 @@ class GeminiNewsAnalyzer:
                 last_exc = exc
                 continue
             if isinstance(payload, dict):
-                return payload
+                return cls._sanitize_payload(payload)
             raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
 
         preview = raw[:500].replace("\n", " ")
@@ -407,7 +444,7 @@ class GeminiNewsAnalyzer:
     def _payload_from_response(response: Any) -> dict[str, Any]:
         parsed = getattr(response, "parsed", None)
         if isinstance(parsed, dict):
-            return parsed
+            return GeminiNewsAnalyzer._sanitize_payload(parsed)
         text = getattr(response, "text", None) or ""
         return GeminiNewsAnalyzer._parse_json_response(text)
 
@@ -481,4 +518,4 @@ class GeminiNewsAnalyzer:
             self._schema_phase2(),
             max_output_tokens=tokens_p2,
         )
-        return {**phase1, **phase2}
+        return self._sanitize_payload({**phase1, **phase2})
