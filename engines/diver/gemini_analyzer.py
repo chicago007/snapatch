@@ -328,7 +328,47 @@ class GeminiNewsAnalyzer:
         )
 
     @staticmethod
-    def _parse_json_response(text: str) -> dict[str, Any]:
+    def _repair_json_text(raw: str) -> str:
+        text = raw.strip()
+        text = re.sub(r",\s*([}\]])", r"\1", text)
+        return text
+
+    @staticmethod
+    def _close_truncated_json(raw: str) -> str:
+        text = raw.rstrip()
+        text = re.sub(r',\s*"[^"]*$', "", text)
+        text = re.sub(r",\s*$", "", text)
+
+        stack: list[str] = []
+        in_string = False
+        escape = False
+        for ch in text:
+            if escape:
+                escape = False
+                continue
+            if ch == "\\" and in_string:
+                escape = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                stack.append("}")
+            elif ch == "[":
+                stack.append("]")
+            elif ch in "}]" and stack and stack[-1] == ch:
+                stack.pop()
+
+        if in_string:
+            text += '"'
+        while stack:
+            text += stack.pop()
+        return text
+
+    @classmethod
+    def _parse_json_response(cls, text: str) -> dict[str, Any]:
         raw = (text or "").strip()
         if not raw:
             raise ValueError("LLM 응답이 비어 있습니다.")
@@ -336,13 +376,21 @@ class GeminiNewsAnalyzer:
             raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
             raw = re.sub(r"\s*```\s*$", "", raw)
 
-        candidates = [raw]
+        candidates: list[str] = [raw]
         match = re.search(r"\{[\s\S]*\}", raw)
         if match and match.group(0) != raw:
             candidates.append(match.group(0))
+        for variant in list(candidates):
+            candidates.append(cls._repair_json_text(variant))
+            candidates.append(cls._close_truncated_json(variant))
+            candidates.append(cls._close_truncated_json(cls._repair_json_text(variant)))
 
+        seen: set[str] = set()
         last_exc: json.JSONDecodeError | None = None
         for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
             try:
                 payload = json.loads(candidate)
             except json.JSONDecodeError as exc:
@@ -356,6 +404,14 @@ class GeminiNewsAnalyzer:
         raise ValueError(
             f"LLM JSON 파싱 실패: {last_exc}. 응답 앞부분: {preview}"
         ) from last_exc
+
+    @staticmethod
+    def _payload_from_response(response: Any) -> dict[str, Any]:
+        parsed = getattr(response, "parsed", None)
+        if isinstance(parsed, dict):
+            return parsed
+        text = getattr(response, "text", None) or ""
+        return GeminiNewsAnalyzer._parse_json_response(text)
 
     def analyze(
         self,
@@ -383,23 +439,31 @@ class GeminiNewsAnalyzer:
             compact_news,
             fast=fast,
         )
+        token_budget = 2048 if fast else 8192
         last_error: Exception | None = None
-        for attempt in range(2):
+        for attempt in range(3):
             response = self.client.models.generate_content(
                 model=self.settings.vertex_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_json_schema=schema,
-                    max_output_tokens=2048 if fast else 4096,
+                    max_output_tokens=token_budget,
                 ),
             )
             try:
-                return self._parse_json_response(response.text)
+                return self._payload_from_response(response)
             except ValueError as exc:
                 last_error = exc
-                if attempt == 0:
+                if attempt < 2:
                     continue
+                if not fast:
+                    return self.analyze(
+                        query,
+                        news_items,
+                        searched_days,
+                        fast=True,
+                    )
                 raise
         if last_error is not None:
             raise last_error
