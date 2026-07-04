@@ -527,7 +527,7 @@ def generate_with_retry(
 
 
 def save_report(content: str, when: datetime) -> Path:
-    REPORTS_DIR.mkdir(exist_ok=True)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     fname = when.astimezone(KST).strftime("%Y-%m-%d_%H-%M_KST.md")
     path = REPORTS_DIR / fname
     path.write_text(content, encoding="utf-8")
