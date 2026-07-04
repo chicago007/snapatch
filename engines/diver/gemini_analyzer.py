@@ -69,90 +69,47 @@ class GeminiNewsAnalyzer:
             6: "일요일",
         }[value.weekday()]
 
-    @staticmethod
-    def _fast_schema() -> dict[str, Any]:
-        return {
-            "type": "object",
-            "properties": {
-                "analysis_reference_datetime_kst": {"type": "string"},
-                "analysis_reference_weekday_kst": {"type": "string"},
-                "query": {"type": "string"},
-                "searched_days": {"type": "integer"},
-                "keyword_interpretation": {
-                    "type": "object",
-                    "properties": {
-                        "classification": {"type": "string"},
-                        "definition": {"type": "string"},
-                        "background": {"type": "string"},
-                    },
-                    "required": ["classification", "definition", "background"],
-                },
-                "news_scan_results": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "id": {"type": "integer"},
-                            "date": {"type": "string"},
-                            "source": {"type": "string"},
-                            "headline": {"type": "string"},
-                            "summary": {"type": "string"},
-                            "sentiment": {"type": "string"},
-                        },
-                        "required": [
-                            "id",
-                            "date",
-                            "source",
-                            "headline",
-                            "summary",
-                            "sentiment",
-                        ],
-                    },
-                },
-                "market_psychology_analysis": {
-                    "type": "object",
-                    "properties": {
-                        "fear_greed_index": {"type": "integer"},
-                        "summary": {"type": "string"},
-                    },
-                    "required": ["fear_greed_index", "summary"],
-                },
-                "risk_opportunity_matrix": {
-                    "type": "object",
-                    "properties": {
-                        "upside_factors": {"type": "array", "items": {"type": "string"}},
-                        "downside_factors": {"type": "array", "items": {"type": "string"}},
-                    },
-                    "required": ["upside_factors", "downside_factors"],
-                },
-                "final_assessment": {
-                    "type": "object",
-                    "properties": {
-                        "one_liner_message": {"type": "string"},
-                        "strengths": {"type": "array", "items": {"type": "string"}},
-                        "weaknesses": {"type": "array", "items": {"type": "string"}},
-                        "final_recommendation": {"type": "string"},
-                    },
-                    "required": [
-                        "one_liner_message",
-                        "strengths",
-                        "weaknesses",
-                        "final_recommendation",
-                    ],
-                },
-            },
-            "required": [
-                "analysis_reference_datetime_kst",
-                "analysis_reference_weekday_kst",
-                "query",
-                "searched_days",
-                "keyword_interpretation",
-                "news_scan_results",
-                "market_psychology_analysis",
-                "risk_opportunity_matrix",
-                "final_assessment",
-            ],
-        }
+    def _build_prompt(
+        self,
+        query: str,
+        searched_days: int,
+        compact_news: list[dict[str, Any]],
+        *,
+        fast: bool = False,
+    ) -> str:
+        now_kst = self._get_kst_datetime()
+        weekday = self._get_korean_weekday(now_kst)
+        if fast:
+            depth_rule = (
+                "각 배열은 핵심 항목 2~3개를 채워라.\n"
+                "문장은 짧게 쓰되, 스키마의 모든 키는 반드시 포함하라.\n"
+            )
+            version_label = "간략"
+        else:
+            depth_rule = (
+                "fact_analysis, narrative_analysis, market_impact_analysis, "
+                "investment_scenarios, investment_action_plan, final_assessment "
+                "등 스키마의 모든 섹션을 빠짐없이 채워라.\n"
+                "각 배열은 가능한 한 3개 항목 이상, 팩트 분석은 뉴스 근거를 "
+                "구체적으로 적어라.\n"
+            )
+            version_label = "심층"
+        return (
+            f"{self.base_prompt}\n\n"
+            f"위 prompt.md의 투자 리서치 의도를 따르되, 출력은 아래 고정 JSON "
+            f"스키마에 맞춘 {version_label} 버전으로 작성하라.\n"
+            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
+            "모든 키는 영어 snake_case로만 작성하라.\n"
+            f"{depth_rule}"
+            "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n"
+            "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
+            f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
+            f"analysis_reference_weekday_kst: {weekday}\n"
+            f"query: {query}\n"
+            f"searched_days: {searched_days}\n"
+            "news_items:\n"
+            f"{json.dumps(compact_news, ensure_ascii=False)}"
+        )
 
     @staticmethod
     def _schema() -> dict[str, Any]:
@@ -295,38 +252,6 @@ class GeminiNewsAnalyzer:
             ],
         }
 
-    def _build_prompt(
-        self,
-        query: str,
-        searched_days: int,
-        compact_news: list[dict[str, Any]],
-        *,
-        fast: bool = False,
-    ) -> str:
-        now_kst = self._get_kst_datetime()
-        weekday = self._get_korean_weekday(now_kst)
-        array_rule = (
-            "각 배열은 핵심 항목 1~2개만 채워라.\n"
-            if fast
-            else "모든 배열은 가능한 한 3개 항목 이상 채워라.\n"
-        )
-        return (
-            f"{self.base_prompt}\n\n"
-            "위 prompt.md의 투자 리서치 의도를 따르되, 출력은 아래 고정 JSON "
-            "스키마에 맞춘 간략 버전으로 작성하라.\n"
-            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
-            "모든 키는 영어 snake_case로만 작성하라.\n"
-            f"{array_rule}"
-            "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n"
-            "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
-            f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
-            f"analysis_reference_weekday_kst: {weekday}\n"
-            f"query: {query}\n"
-            f"searched_days: {searched_days}\n"
-            "news_items:\n"
-            f"{json.dumps(compact_news, ensure_ascii=False)}"
-        )
-
     @staticmethod
     def _repair_json_text(raw: str) -> str:
         text = raw.strip()
@@ -421,6 +346,7 @@ class GeminiNewsAnalyzer:
         *,
         fast: bool = False,
     ) -> dict[str, Any]:
+        preview_len = 600 if fast else self.settings.content_preview_length
         compact_news = [
             {
                 "published_at": item.published_at.isoformat(),
@@ -428,18 +354,18 @@ class GeminiNewsAnalyzer:
                 "press": item.press,
                 "url": item.url,
                 "description": item.description,
-                "content": item.content[: self.settings.content_preview_length],
+                "content": item.content[:preview_len],
             }
             for item in news_items
         ]
-        schema = self._fast_schema() if fast else self._schema()
+        schema = self._schema()
         prompt = self._build_prompt(
             query,
             searched_days,
             compact_news,
             fast=fast,
         )
-        token_budget = 2048 if fast else 8192
+        token_budget = 4096 if fast else 8192
         last_error: Exception | None = None
         for attempt in range(3):
             response = self.client.models.generate_content(
@@ -457,13 +383,6 @@ class GeminiNewsAnalyzer:
                 last_error = exc
                 if attempt < 2:
                     continue
-                if not fast:
-                    return self.analyze(
-                        query,
-                        news_items,
-                        searched_days,
-                        fast=True,
-                    )
                 raise
         if last_error is not None:
             raise last_error

@@ -116,8 +116,8 @@ def _run_engine_cli(engine: str) -> int:
     if engine == "diver":
         print()
         print("  생성 모드를 선택하세요.\n")
-        print("  [1] 빠름 (축소 스키마, 원문 생략, ~20~30초)")
-        print("  [2] 정확 (전체 스키마, 원문 포함, ~40~60초)")
+        print("  [1] 빠름 (원문 생략 + 간략 리포트)")
+        print("  [2] 심층 (원문 포함 + 전체 분석, 권장)")
         print()
         mode = _prompt_choice("번호 입력: ", {"1", "2"})
         print()

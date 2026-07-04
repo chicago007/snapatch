@@ -92,7 +92,7 @@ def render() -> None:
         st.write("")
         run = st.button("분석", type="primary", use_container_width=True)
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     target_count = c1.number_input(
         "목표 기사 수",
         min_value=1,
@@ -105,9 +105,14 @@ def render() -> None:
         max_value=90,
         value=settings.default_max_days,
     )
-    fast = c3.toggle(
-        "빠른 모드 (원문 생략 + 축소 분석)",
-        value=settings.skip_content,
+    skip_content = c3.toggle(
+        "원문 생략 (수집만 빠름)",
+        value=False,
+    )
+    compact_report = c4.toggle(
+        "간략 리포트 (짧은 문장)",
+        value=False,
+        help="심층 분석(기본)은 팩트·시나리오·액션플랜까지 모두 생성합니다.",
     )
     save_report = st.checkbox("outputs/diver 폴더에 저장", value=True)
 
@@ -124,8 +129,8 @@ def render() -> None:
                 query.strip(),
                 int(target_count),
                 int(max_days),
-                bool(fast),
-                bool(fast),
+                bool(skip_content),
+                bool(compact_report),
             )
         except Exception as exc:  # noqa: BLE001
             st.error(f"분석 실패: {exc}", icon="🚫")
