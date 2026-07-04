@@ -57,7 +57,7 @@ def render() -> None:
     api_key = get_gemini_api_key()
     if not api_key:
         st.error(
-            "GEMINI_API_KEY 가 설정되지 않았습니다. "
+            "GEMINI_API_KEY 또는 GOOGLE_API_KEY 가 설정되지 않았습니다. "
             "`.env` 파일 또는 환경변수를 확인하세요.",
             icon="🚫",
         )
@@ -155,5 +155,8 @@ def render() -> None:
         )
 
         if should_save:
-            saved = save_report(report, when)
-            st.caption(f"저장 완료: `{saved}`")
+            try:
+                saved = save_report(report, when)
+                st.caption(f"저장 완료: `{saved}`")
+            except OSError as exc:
+                st.warning(f"로컬 저장 실패 (다운로드는 가능): {exc}")

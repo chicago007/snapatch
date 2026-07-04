@@ -17,6 +17,7 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     python -m hub.cli.breaker loop
     python -m hub.cli.breaker doctor
     python -m hub.cli.breaker --model gemini-2.5-flash
+    python -m hub.cli.breaker --fast
 
     # 모듈 직접 실행도 가능 (서브커맨드 생략 시 once)
     python -m engines.breaker.breaker
@@ -582,20 +583,50 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     return 1
 
 
+def parse_sources(raw: str | None) -> list[str]:
+    if not raw:
+        return list(DEFAULT_SOURCES)
+    return [s.strip() for s in raw.split(",") if s.strip()]
+
+
+def preset_from_args(args: argparse.Namespace) -> GeneratePreset:
+    return FAST_PRESET if getattr(args, "fast", False) else ACCURATE_PRESET
+
+
+def model_from_args(args: argparse.Namespace, preset: GeneratePreset) -> str:
+    return (args.model or "").strip() or preset.model
+
+
 def cmd_once(args: argparse.Namespace) -> int:
     api_key = get_gemini_api_key()
     sources = parse_sources(args.sources)
     when = datetime.now(tz=KST)
     label = now_kst_label(when)
+    preset = preset_from_args(args)
+    model = model_from_args(args, preset)
+    mode_label = "빠름" if preset is FAST_PRESET else "정확"
 
     print_header(label)
-    print(f"모델: {args.model}")
+    print(f"모드: {mode_label}")
+    print(f"모델: {model}")
     print(f"매체: {', '.join(sources)}\n")
-    print("리포트 생성 중… (보통 20~40초 소요)\n")
+    if preset is FAST_PRESET:
+        print("리포트 생성 중… (빠른 모드, 보통 5~10초 소요)\n")
+    else:
+        print("리포트 생성 중… (정확 모드, 보통 20~40초 소요)\n")
 
     started_at = time.perf_counter()
     try:
-        content = generate_briefing(api_key, args.model, sources, label)
+        content = generate_briefing(
+            api_key=api_key,
+            model=model,
+            sources=sources,
+            now_kst=label,
+            timeout=preset.timeout,
+            use_google_search=preset.use_google_search,
+            max_output_tokens=preset.max_output_tokens,
+            temperature=preset.temperature,
+        )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
         return 1
@@ -614,14 +645,18 @@ def cmd_loop(args: argparse.Namespace) -> int:
     """평일 09~15시 KST 매시 정각 자동 실행."""
     api_key = get_gemini_api_key()
     sources = parse_sources(args.sources)
+    preset = preset_from_args(args)
+    model = model_from_args(args, preset)
+    mode_label = "빠름" if preset is FAST_PRESET else "정확"
 
     print(f"[loop] 시작 — 평일 09~15시 KST 매시 정각 자동 생성")
-    print(f"       모델: {args.model}")
+    print(f"       모드: {mode_label}")
+    print(f"       모델: {model}")
     print(f"       매체: {', '.join(sources)}")
     print(f"       리포트 저장 위치: {REPORTS_DIR}\n")
 
     if args.once_now:
-        run_one(api_key, args.model, sources, label_override=None)
+        run_one(api_key, sources, label_override=None, preset=preset, model=model)
 
     last_run_key = ""
     while True:
@@ -635,7 +670,13 @@ def cmd_loop(args: argparse.Namespace) -> int:
             )
             if in_window and key != last_run_key:
                 last_run_key = key
-                run_one(api_key, args.model, sources, label_override=None)
+                run_one(
+                    api_key,
+                    sources,
+                    label_override=None,
+                    preset=preset,
+                    model=model,
+                )
                 # 같은 시간대 중복 실행 방지를 위해 다음 분으로 살짝 이동
                 time.sleep(65)
                 continue
@@ -654,16 +695,27 @@ def cmd_loop(args: argparse.Namespace) -> int:
 
 def run_one(
     api_key: str,
-    model: str,
     sources: list[str],
     label_override: str | None,
+    preset: GeneratePreset,
+    model: str | None = None,
 ) -> None:
     when = datetime.now(tz=KST)
     label = label_override or now_kst_label(when)
+    resolved_model = (model or "").strip() or preset.model
     print_header(label)
     started_at = time.perf_counter()
     try:
-        content = generate_briefing(api_key, model, sources, label)
+        content = generate_briefing(
+            api_key=api_key,
+            model=resolved_model,
+            sources=sources,
+            now_kst=label,
+            timeout=preset.timeout,
+            use_google_search=preset.use_google_search,
+            max_output_tokens=preset.max_output_tokens,
+            temperature=preset.temperature,
+        )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
         return
@@ -674,12 +726,6 @@ def run_one(
     print(f"소요 시간: {format_elapsed(elapsed)}\n")
 
 
-def parse_sources(raw: str | None) -> list[str]:
-    if not raw:
-        return list(DEFAULT_SOURCES)
-    return [s.strip() for s in raw.split(",") if s.strip()]
-
-
 def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description=(
@@ -687,16 +733,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "(서브커맨드 생략 시 once)"
         ),
         epilog=(
-            "예: python breaker.py\n"
-            "    python breaker.py --print\n"
-            "    python breaker.py loop --once-now"
+            "예: python -m hub.cli.breaker\n"
+            "    python -m hub.cli.breaker --fast --print\n"
+            "    python -m hub.cli.breaker loop --once-now"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
+        "--fast",
+        action="store_true",
+        help="빠른 모드 (flash, Google 검색 생략, ~5~10초)",
+    )
+    p.add_argument(
         "--model",
-        default=os.environ.get("GEMINI_MODEL", "gemini-2.5-pro"),
-        help="사용할 Gemini 모델 (기본: gemini-2.5-pro)",
+        default=None,
+        help="Gemini 모델 (생략 시 모드별 기본: fast→flash, accurate→pro)",
     )
     p.add_argument(
         "--sources",
@@ -740,7 +791,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p_doctor.set_defaults(func=cmd_doctor, command="doctor")
 
-    p.set_defaults(func=cmd_once, command="once", print_only=False)
+    p.set_defaults(func=cmd_once, command="once", print_only=False, fast=False)
 
     return p
 
@@ -754,6 +805,8 @@ def main() -> int:
         args.command = "once"
         if not hasattr(args, "print_only"):
             args.print_only = False
+        if not hasattr(args, "fast"):
+            args.fast = False
     return args.func(args)
 
 

@@ -276,15 +276,24 @@ section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.
 
 def _feature_status() -> dict[str, bool]:
     """기능별 즉시 실행 가능 여부 (필수 키 충족 여부)."""
-    has_gemini = bool(os.getenv("GEMINI_API_KEY"))
-    has_diver = bool(
-        os.getenv("NAVER_CLIENT_ID")
-        and os.getenv("NAVER_CLIENT_SECRET")
-        and os.getenv("GOOGLE_CLOUD_PROJECT")
+    has_gemini = bool(
+        os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     )
+    has_naver = bool(
+        os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET")
+    )
+    use_vertex = os.getenv("GOOGLE_GENAI_USE_VERTEXAI", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if use_vertex:
+        has_diver_ai = bool(os.getenv("GOOGLE_CLOUD_PROJECT"))
+    else:
+        has_diver_ai = has_gemini
     return {
         "breaker": has_gemini,
-        "diver": has_diver,
+        "diver": has_naver and has_diver_ai,
         "dejavu": True,
         "match": True,
     }

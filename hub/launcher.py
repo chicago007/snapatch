@@ -103,6 +103,16 @@ def _run_streamlit() -> int:
 def _run_engine_cli(engine: str) -> int:
     cmd: list[str] = [sys.executable, "-m", f"hub.cli.{engine}"]
 
+    if engine == "breaker":
+        print()
+        print("  생성 모드를 선택하세요.\n")
+        print("  [1] 빠름 (flash, 검색 생략, ~5~10초)")
+        print("  [2] 정확 (pro, Google 검색, ~20~40초)")
+        print()
+        mode = _prompt_choice("번호 입력: ", {"1", "2"})
+        if mode == "1":
+            cmd.append("--fast")
+
     if engine == "diver":
         print()
         query = input("검색 키워드를 입력하세요: ").strip()
