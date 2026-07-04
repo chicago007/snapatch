@@ -128,24 +128,27 @@ class GeneratePreset:
     use_google_search: bool
     temperature: float
     max_retry: int
+    thinking_budget: int | None = None
 
 
 FAST_PRESET = GeneratePreset(
     model="gemini-2.5-flash",
-    timeout=40,
-    max_output_tokens=1600,
+    timeout=60,
+    max_output_tokens=8192,
     use_google_search=False,
     temperature=0.3,
     max_retry=1,
+    thinking_budget=0,
 )
 
 ACCURATE_PRESET = GeneratePreset(
     model="gemini-2.5-pro",
-    timeout=110,
-    max_output_tokens=3000,
+    timeout=120,
+    max_output_tokens=8192,
     use_google_search=True,
     temperature=0.2,
     max_retry=2,
+    thinking_budget=2048,
 )
 
 
@@ -251,10 +254,19 @@ def _build_briefing_body(
     max_output_tokens: int,
     temperature: float,
     extra_user_instruction: str | None = None,
+    thinking_budget: int | None = None,
 ) -> dict:
     user_prompt = build_user_prompt(now_kst, sources)
     if extra_user_instruction:
         user_prompt = f"{user_prompt}\n\n{extra_user_instruction}"
+
+    generation_config: dict = {
+        "temperature": temperature,
+        "topP": 0.9,
+        "maxOutputTokens": max_output_tokens,
+    }
+    if thinking_budget is not None:
+        generation_config["thinkingConfig"] = {"thinkingBudget": thinking_budget}
 
     body = {
         "systemInstruction": {
@@ -267,11 +279,7 @@ def _build_briefing_body(
                 "parts": [{"text": user_prompt}],
             }
         ],
-        "generationConfig": {
-            "temperature": temperature,
-            "topP": 0.9,
-            "maxOutputTokens": max_output_tokens,
-        },
+        "generationConfig": generation_config,
         "safetySettings": [
             {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
             {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -287,7 +295,14 @@ def _build_briefing_body(
 def _extract_text_from_response(data: dict) -> str:
     candidate = (data.get("candidates") or [{}])[0]
     parts = (candidate.get("content") or {}).get("parts") or []
-    return "\n".join(p.get("text", "") for p in parts if p.get("text"))
+    texts: list[str] = []
+    for part in parts:
+        if part.get("thought"):
+            continue
+        text = part.get("text")
+        if text:
+            texts.append(text)
+    return "\n".join(texts)
 
 
 def _append_grounding_chunks(text: str, candidate: dict) -> str:
@@ -314,6 +329,7 @@ def generate_briefing(
     max_output_tokens: int = 8192,
     temperature: float = 0.4,
     extra_user_instruction: str | None = None,
+    thinking_budget: int | None = None,
 ) -> str:
     """Gemini API를 호출해 시황 리포트 마크다운을 반환한다.
 
@@ -341,6 +357,7 @@ def generate_briefing(
         max_output_tokens=max_output_tokens,
         temperature=temperature,
         extra_user_instruction=extra_user_instruction,
+        thinking_budget=thinking_budget,
     )
 
     resp = _post_with_retry(url, headers, body, timeout)
@@ -401,6 +418,7 @@ def stream_briefing(
     max_output_tokens: int = 8192,
     temperature: float = 0.4,
     extra_user_instruction: str | None = None,
+    thinking_budget: int | None = None,
 ) -> Iterator[str]:
     """Gemini streamGenerateContent 로 리포트를 점진적으로 생성한다."""
     if not api_key:
@@ -424,6 +442,7 @@ def stream_briefing(
         max_output_tokens=max_output_tokens,
         temperature=temperature,
         extra_user_instruction=extra_user_instruction,
+        thinking_budget=thinking_budget,
     )
 
     resp = requests.post(
@@ -511,6 +530,7 @@ def generate_with_retry(
             max_output_tokens=preset.max_output_tokens,
             temperature=preset.temperature,
             extra_user_instruction=extra_instruction,
+            thinking_budget=preset.thinking_budget,
         )
         missing = detect_missing_commodities(text)
         if not missing:
@@ -626,6 +646,7 @@ def cmd_once(args: argparse.Namespace) -> int:
             use_google_search=preset.use_google_search,
             max_output_tokens=preset.max_output_tokens,
             temperature=preset.temperature,
+            thinking_budget=preset.thinking_budget,
         )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
@@ -715,6 +736,7 @@ def run_one(
             use_google_search=preset.use_google_search,
             max_output_tokens=preset.max_output_tokens,
             temperature=preset.temperature,
+            thinking_budget=preset.thinking_budget,
         )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)

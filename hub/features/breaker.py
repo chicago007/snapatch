@@ -17,10 +17,10 @@ from engines.breaker.breaker import (  # noqa: E402
     DEFAULT_SOURCES,
     FAST_PRESET,
     KST,
+    generate_briefing,
     get_gemini_api_key,
     now_kst_label,
     save_report,
-    stream_briefing,
 )
 
 
@@ -120,27 +120,28 @@ def render() -> None:
     with result_area:
         started_at = time.perf_counter()
         spinner_msg = (
-            "리포트 생성 중입니다... (빠른 모드, 스트리밍)"
+            "리포트 생성 중입니다... (빠른 모드)"
             if use_fast
-            else "리포트 생성 중입니다... (정확 모드, 스트리밍)"
+            else "리포트 생성 중입니다... (정확 모드, Google 검색)"
         )
         with st.spinner(spinner_msg):
             try:
-                report = st.write_stream(
-                    stream_briefing(
-                        api_key,
-                        model,
-                        sources,
-                        label,
-                        timeout=preset.timeout,
-                        use_google_search=preset.use_google_search,
-                        max_output_tokens=preset.max_output_tokens,
-                        temperature=preset.temperature,
-                    ),
+                report = generate_briefing(
+                    api_key,
+                    model,
+                    sources,
+                    label,
+                    timeout=preset.timeout,
+                    use_google_search=preset.use_google_search,
+                    max_output_tokens=preset.max_output_tokens,
+                    temperature=preset.temperature,
+                    thinking_budget=preset.thinking_budget,
                 )
             except Exception as exc:  # noqa: BLE001
                 st.error(f"생성 실패: {exc}", icon="🚫")
                 return
+
+        st.markdown(report)
         elapsed = time.perf_counter() - started_at
 
         st.success(f"생성이 완료되었습니다. (소요: {_format_elapsed(elapsed)})")
