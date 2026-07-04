@@ -183,7 +183,66 @@ class GeminiNewsAnalyzer:
             if fast
             else "각 배열은 3개 항목 이상, narrative는 2~3문장.\n"
         )
+        context = self._phase_context(query, searched_days, phase1)
+        return (
+            f"{self.base_prompt}\n\n"
+            "[2단계] 아래 1단계 분석 결과를 바탕으로 인사이트 섹션만 JSON으로 작성하라.\n"
+            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
+            f"{depth}"
+            "문자열 필드는 한글 기준 250자 이내.\n"
+            "불확실한 내용은 '불확실함'이라 한 번만 표기하고, 같은 단어·문장을 반복하지 마라.\n\n"
+            f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
+            "phase1_context:\n"
+            f"{json.dumps(context, ensure_ascii=False)}\n\n"
+            "이번 응답 JSON 스키마 키:\n"
+            "market_psychology_analysis, narrative_analysis, market_impact_analysis, "
+            "risk_opportunity_matrix, investment_scenarios"
+        )
+
+    def _build_prompt_phase3(
+        self,
+        query: str,
+        searched_days: int,
+        phase1: dict[str, Any],
+        phase2: dict[str, Any],
+        *,
+        fast: bool = False,
+    ) -> str:
+        now_kst = self._get_kst_datetime()
+        depth = (
+            "각 배열은 2~3개 항목.\n"
+            if fast
+            else "각 배열은 3개 항목 이상.\n"
+        )
         context = {
+            **self._phase_context(query, searched_days, phase1),
+            "investment_scenarios": phase2.get("investment_scenarios"),
+            "risk_opportunity_matrix": phase2.get("risk_opportunity_matrix"),
+            "narrative_analysis": phase2.get("narrative_analysis"),
+        }
+        return (
+            f"{self.base_prompt}\n\n"
+            "[3단계] 아래 분석 맥락을 바탕으로 실행·평가·메타 섹션만 JSON으로 작성하라.\n"
+            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
+            f"{depth}"
+            "문자열 필드는 한글 기준 250자 이내.\n"
+            "불확실한 내용은 '불확실함'이라 한 번만 표기하고, 같은 단어·문장을 반복하지 마라.\n\n"
+            f"analysis_completion_datetime_kst: {now_kst.isoformat()}\n"
+            "analysis_context:\n"
+            f"{json.dumps(context, ensure_ascii=False)}\n\n"
+            "이번 응답 JSON 스키마 키:\n"
+            "investment_action_plan, final_assessment, "
+            "analysis_completion_datetime_kst, reliability_grade, "
+            "next_monitoring_date, monitoring_reason"
+        )
+
+    @staticmethod
+    def _phase_context(
+        query: str,
+        searched_days: int,
+        phase1: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
             "query": query,
             "searched_days": searched_days,
             "keyword_interpretation": phase1.get("keyword_interpretation"),
@@ -194,22 +253,6 @@ class GeminiNewsAnalyzer:
                 if isinstance(item, dict)
             ],
         }
-        return (
-            f"{self.base_prompt}\n\n"
-            "[2단계] 아래 1단계 분석 결과를 바탕으로 나머지 섹션만 JSON으로 작성하라.\n"
-            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
-            f"{depth}"
-            "문자열 필드는 한글 기준 250자 이내.\n"
-            "불확실한 내용은 '불확실함'이라 한 번만 표기하고, 같은 단어·문장을 반복하지 마라.\n\n"
-            f"analysis_completion_datetime_kst: {now_kst.isoformat()}\n"
-            "phase1_context:\n"
-            f"{json.dumps(context, ensure_ascii=False)}\n\n"
-            "이번 응답 JSON 스키마 키:\n"
-            "market_psychology_analysis, narrative_analysis, market_impact_analysis, "
-            "risk_opportunity_matrix, investment_scenarios, investment_action_plan, "
-            "final_assessment, analysis_completion_datetime_kst, reliability_grade, "
-            "next_monitoring_date, monitoring_reason"
-        )
 
     @staticmethod
     def _schema_phase1() -> dict[str, Any]:
@@ -309,6 +352,21 @@ class GeminiNewsAnalyzer:
                         "bear_scenario",
                     ],
                 },
+            },
+            "required": [
+                "market_psychology_analysis",
+                "narrative_analysis",
+                "market_impact_analysis",
+                "risk_opportunity_matrix",
+                "investment_scenarios",
+            ],
+        }
+
+    @staticmethod
+    def _schema_phase3() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
                 "investment_action_plan": {
                     "type": "object",
                     "properties": {
@@ -348,11 +406,6 @@ class GeminiNewsAnalyzer:
                 "monitoring_reason": {"type": "string"},
             },
             "required": [
-                "market_psychology_analysis",
-                "narrative_analysis",
-                "market_impact_analysis",
-                "risk_opportunity_matrix",
-                "investment_scenarios",
                 "investment_action_plan",
                 "final_assessment",
                 "analysis_completion_datetime_kst",
@@ -361,6 +414,28 @@ class GeminiNewsAnalyzer:
                 "monitoring_reason",
             ],
         }
+
+    @staticmethod
+    def _has_required(payload: dict[str, Any], keys: list[str]) -> bool:
+        for key in keys:
+            if key not in payload:
+                return False
+            value = payload[key]
+            if isinstance(value, str) and not value.strip():
+                return False
+            if isinstance(value, (list, dict)) and not value:
+                return False
+        return True
+
+    @staticmethod
+    def _payload_score(payload: dict[str, Any]) -> int:
+        score = len(payload)
+        for value in payload.values():
+            if isinstance(value, dict) and value:
+                score += len(value)
+            elif isinstance(value, list) and value:
+                score += len(value)
+        return score
 
     @staticmethod
     def _repair_json_text(raw: str) -> str:
@@ -422,6 +497,8 @@ class GeminiNewsAnalyzer:
 
         seen: set[str] = set()
         last_exc: json.JSONDecodeError | None = None
+        best: dict[str, Any] | None = None
+        best_score = -1
         for candidate in candidates:
             if candidate in seen:
                 continue
@@ -431,9 +508,15 @@ class GeminiNewsAnalyzer:
             except json.JSONDecodeError as exc:
                 last_exc = exc
                 continue
-            if isinstance(payload, dict):
-                return cls._sanitize_payload(payload)
-            raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
+            if not isinstance(payload, dict):
+                raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
+            score = cls._payload_score(payload)
+            if score > best_score:
+                best = payload
+                best_score = score
+
+        if best is not None:
+            return cls._sanitize_payload(best)
 
         preview = raw[:500].replace("\n", " ")
         raise ValueError(
@@ -456,6 +539,7 @@ class GeminiNewsAnalyzer:
         max_output_tokens: int,
         max_attempts: int = 3,
     ) -> dict[str, Any]:
+        required = list(schema.get("required", []))
         last_error: Exception | None = None
         for _attempt in range(max_attempts):
             response = self.client.models.generate_content(
@@ -468,9 +552,17 @@ class GeminiNewsAnalyzer:
                 ),
             )
             try:
-                return self._payload_from_response(response)
+                payload = self._payload_from_response(response)
             except ValueError as exc:
                 last_error = exc
+                continue
+            if required and not self._has_required(payload, required):
+                last_error = ValueError(
+                    "LLM 응답에 필수 키가 누락되었습니다: "
+                    f"{[key for key in required if key not in payload]}"
+                )
+                continue
+            return payload
         if last_error is not None:
             raise last_error
         raise RuntimeError("LLM 분석에 실패했습니다.")
@@ -496,7 +588,8 @@ class GeminiNewsAnalyzer:
             for item in news_items
         ]
         tokens_p1 = 4096
-        tokens_p2 = 4096 if fast else 6144
+        tokens_p2 = 4096 if fast else 5120
+        tokens_p3 = 3072
 
         phase1 = self._generate_structured(
             self._build_prompt_phase1(
@@ -518,4 +611,20 @@ class GeminiNewsAnalyzer:
             self._schema_phase2(),
             max_output_tokens=tokens_p2,
         )
-        return self._sanitize_payload({**phase1, **phase2})
+        phase3 = self._generate_structured(
+            self._build_prompt_phase3(
+                query,
+                searched_days,
+                phase1,
+                phase2,
+                fast=fast,
+            ),
+            self._schema_phase3(),
+            max_output_tokens=tokens_p3,
+        )
+        merged = {**phase1, **phase2, **phase3}
+        if not merged.get("analysis_completion_datetime_kst"):
+            merged["analysis_completion_datetime_kst"] = (
+                self._get_kst_datetime().isoformat()
+            )
+        return self._sanitize_payload(merged)

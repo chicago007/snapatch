@@ -123,7 +123,7 @@ def render() -> None:
         return
 
     started_at = time.perf_counter()
-    with st.spinner(f"'{query}' 뉴스 수집 및 2단계 심층 분석 중..."):
+    with st.spinner(f"'{query}' 뉴스 수집 및 3단계 심층 분석 중..."):
         try:
             result = _cached_run_pipeline(
                 query.strip(),
