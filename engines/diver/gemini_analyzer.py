@@ -11,7 +11,6 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None
 
 from google import genai
-from google.genai.types import HttpOptions
 
 from config import Settings
 from models import NewsItem
@@ -21,7 +20,8 @@ class GeminiNewsAnalyzer:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.settings.validate_vertex()
-        self.client = genai.Client(http_options=HttpOptions(api_version="v1"))
+        # Default (beta) API — v1 stable endpoints reject response_schema / response_mime_type.
+        self.client = genai.Client()
         self.base_prompt = self._load_base_prompt()
 
     @staticmethod
