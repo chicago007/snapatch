@@ -94,6 +94,7 @@ class GeminiNewsAnalyzer:
                 "구체적으로 적어라.\n"
             )
             version_label = "심층"
+        length_rule = "문자열 필드는 한글 기준 250자 이내로 작성하라.\n"
         return (
             f"{self.base_prompt}\n\n"
             f"위 prompt.md의 투자 리서치 의도를 따르되, 출력은 아래 고정 JSON "
@@ -101,6 +102,7 @@ class GeminiNewsAnalyzer:
             "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
             "모든 키는 영어 snake_case로만 작성하라.\n"
             f"{depth_rule}"
+            f"{length_rule}"
             "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n"
             "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
             f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
@@ -111,8 +113,69 @@ class GeminiNewsAnalyzer:
             f"{json.dumps(compact_news, ensure_ascii=False)}"
         )
 
+    def _build_prompt_phase1(
+        self,
+        query: str,
+        searched_days: int,
+        compact_news: list[dict[str, Any]],
+        *,
+        fast: bool = False,
+    ) -> str:
+        base = self._build_prompt(query, searched_days, compact_news, fast=fast)
+        return (
+            f"{base}\n\n"
+            "[1단계] 이번 응답 JSON 스키마에는 아래 키만 포함하라:\n"
+            "analysis_reference_datetime_kst, analysis_reference_weekday_kst, "
+            "query, searched_days, keyword_interpretation, news_scan_results, "
+            "fact_analysis\n"
+            "news_scan_results는 수집된 기사마다 id·headline·summary·sentiment를 "
+            "빠짐없이 채워라."
+        )
+
+    def _build_prompt_phase2(
+        self,
+        query: str,
+        searched_days: int,
+        phase1: dict[str, Any],
+        *,
+        fast: bool = False,
+    ) -> str:
+        now_kst = self._get_kst_datetime()
+        depth = (
+            "각 배열은 2~3개 항목.\n"
+            if fast
+            else "각 배열은 3개 항목 이상, narrative는 2~3문장.\n"
+        )
+        context = {
+            "query": query,
+            "searched_days": searched_days,
+            "keyword_interpretation": phase1.get("keyword_interpretation"),
+            "fact_analysis": phase1.get("fact_analysis"),
+            "news_headlines": [
+                item.get("headline", "")
+                for item in (phase1.get("news_scan_results") or [])
+                if isinstance(item, dict)
+            ],
+        }
+        return (
+            f"{self.base_prompt}\n\n"
+            "[2단계] 아래 1단계 분석 결과를 바탕으로 나머지 섹션만 JSON으로 작성하라.\n"
+            "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
+            f"{depth}"
+            "문자열 필드는 한글 기준 250자 이내.\n"
+            "불확실한 내용은 추정하지 말고 '불확실함'이라고 써라.\n\n"
+            f"analysis_completion_datetime_kst: {now_kst.isoformat()}\n"
+            "phase1_context:\n"
+            f"{json.dumps(context, ensure_ascii=False)}\n\n"
+            "이번 응답 JSON 스키마 키:\n"
+            "market_psychology_analysis, narrative_analysis, market_impact_analysis, "
+            "risk_opportunity_matrix, investment_scenarios, investment_action_plan, "
+            "final_assessment, analysis_completion_datetime_kst, reliability_grade, "
+            "next_monitoring_date, monitoring_reason"
+        )
+
     @staticmethod
-    def _schema() -> dict[str, Any]:
+    def _schema_phase1() -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -152,6 +215,23 @@ class GeminiNewsAnalyzer:
                     },
                 },
                 "fact_analysis": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": [
+                "analysis_reference_datetime_kst",
+                "analysis_reference_weekday_kst",
+                "query",
+                "searched_days",
+                "keyword_interpretation",
+                "news_scan_results",
+                "fact_analysis",
+            ],
+        }
+
+    @staticmethod
+    def _schema_phase2() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
                 "market_psychology_analysis": {
                     "type": "object",
                     "properties": {
@@ -231,13 +311,6 @@ class GeminiNewsAnalyzer:
                 "monitoring_reason": {"type": "string"},
             },
             "required": [
-                "analysis_reference_datetime_kst",
-                "analysis_reference_weekday_kst",
-                "query",
-                "searched_days",
-                "keyword_interpretation",
-                "news_scan_results",
-                "fact_analysis",
                 "market_psychology_analysis",
                 "narrative_analysis",
                 "market_impact_analysis",
@@ -338,6 +411,33 @@ class GeminiNewsAnalyzer:
         text = getattr(response, "text", None) or ""
         return GeminiNewsAnalyzer._parse_json_response(text)
 
+    def _generate_structured(
+        self,
+        prompt: str,
+        schema: dict[str, Any],
+        *,
+        max_output_tokens: int,
+        max_attempts: int = 3,
+    ) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for _attempt in range(max_attempts):
+            response = self.client.models.generate_content(
+                model=self.settings.vertex_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_json_schema=schema,
+                    max_output_tokens=max_output_tokens,
+                ),
+            )
+            try:
+                return self._payload_from_response(response)
+            except ValueError as exc:
+                last_error = exc
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("LLM 분석에 실패했습니다.")
+
     def analyze(
         self,
         query: str,
@@ -358,32 +458,27 @@ class GeminiNewsAnalyzer:
             }
             for item in news_items
         ]
-        schema = self._schema()
-        prompt = self._build_prompt(
-            query,
-            searched_days,
-            compact_news,
-            fast=fast,
+        tokens_p1 = 4096
+        tokens_p2 = 4096 if fast else 6144
+
+        phase1 = self._generate_structured(
+            self._build_prompt_phase1(
+                query,
+                searched_days,
+                compact_news,
+                fast=fast,
+            ),
+            self._schema_phase1(),
+            max_output_tokens=tokens_p1,
         )
-        token_budget = 4096 if fast else 8192
-        last_error: Exception | None = None
-        for attempt in range(3):
-            response = self.client.models.generate_content(
-                model=self.settings.vertex_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_json_schema=schema,
-                    max_output_tokens=token_budget,
-                ),
-            )
-            try:
-                return self._payload_from_response(response)
-            except ValueError as exc:
-                last_error = exc
-                if attempt < 2:
-                    continue
-                raise
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("LLM 분석에 실패했습니다.")
+        phase2 = self._generate_structured(
+            self._build_prompt_phase2(
+                query,
+                searched_days,
+                phase1,
+                fast=fast,
+            ),
+            self._schema_phase2(),
+            max_output_tokens=tokens_p2,
+        )
+        return {**phase1, **phase2}
