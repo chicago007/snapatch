@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, List
@@ -11,17 +12,34 @@ except ImportError:  # pragma: no cover
     ZoneInfo = None
 
 from google import genai
+from google.genai import types
+from google.genai.types import HttpOptions
 
 from config import Settings
 from models import NewsItem
 
 
+def _build_genai_client(settings: Settings) -> genai.Client:
+    if settings.uses_vertexai():
+        return genai.Client(
+            vertexai=True,
+            project=settings.google_cloud_project,
+            location=settings.google_cloud_location,
+            http_options=HttpOptions(api_version="v1beta1"),
+        )
+
+    api_key = (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or "").strip()
+    return genai.Client(
+        api_key=api_key,
+        http_options=HttpOptions(api_version="v1beta"),
+    )
+
+
 class GeminiNewsAnalyzer:
     def __init__(self, settings: Settings):
         self.settings = settings
-        self.settings.validate_vertex()
-        # Default (beta) API — v1 stable endpoints reject response_schema / response_mime_type.
-        self.client = genai.Client()
+        self.settings.validate_gemini()
+        self.client = _build_genai_client(settings)
         self.base_prompt = self._load_base_prompt()
 
     @staticmethod
@@ -236,10 +254,10 @@ class GeminiNewsAnalyzer:
         response = self.client.models.generate_content(
             model=self.settings.vertex_model,
             contents=self._build_prompt(query, searched_days, compact_news),
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": self._schema(),
-            },
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_json_schema=self._schema(),
+            ),
         )
         payload = json.loads(response.text)
         if not isinstance(payload, dict):

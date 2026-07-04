@@ -78,13 +78,30 @@ class Settings:
         3,
     )
 
+    def uses_vertexai(self) -> bool:
+        return self.google_genai_use_vertexai.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
     def validate_naver(self) -> None:
         if not self.naver_client_id or not self.naver_client_secret:
             raise ValueError("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET 환경변수가 필요합니다.")
 
+    def validate_gemini(self) -> None:
+        if self.uses_vertexai():
+            if not self.google_cloud_project:
+                raise ValueError("GOOGLE_CLOUD_PROJECT 환경변수가 필요합니다.")
+            return
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+        if not api_key.strip():
+            raise ValueError("GOOGLE_API_KEY 또는 GEMINI_API_KEY가 필요합니다.")
+
     def validate_vertex(self) -> None:
-        if not self.google_cloud_project:
-            raise ValueError("GOOGLE_CLOUD_PROJECT 환경변수가 필요합니다.")
+        """Backward-compatible alias for validate_gemini."""
+        self.validate_gemini()
 
 
 def diver_output_dir() -> Path:

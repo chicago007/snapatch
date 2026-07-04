@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 
 import streamlit as st
@@ -24,8 +25,11 @@ def _check_credentials() -> list[str]:
     missing: list[str] = []
     if not settings.naver_client_id or not settings.naver_client_secret:
         missing.append("NAVER_CLIENT_ID / NAVER_CLIENT_SECRET")
-    if not settings.google_cloud_project:
-        missing.append("GOOGLE_CLOUD_PROJECT (Vertex AI)")
+    if settings.uses_vertexai():
+        if not settings.google_cloud_project:
+            missing.append("GOOGLE_CLOUD_PROJECT (Vertex AI)")
+    elif not (os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")):
+        missing.append("GOOGLE_API_KEY / GEMINI_API_KEY")
     return missing
 
 
@@ -47,7 +51,10 @@ def render() -> None:
             "환경변수가 설정되지 않았습니다: " + ", ".join(missing),
             icon="🚫",
         )
-        st.caption("`.env` 파일에 키를 넣고 다시 실행하세요. (Vertex 는 gcloud 인증 필요)")
+        st.caption(
+            "`.env` 또는 Streamlit Secrets에 키를 넣으세요. "
+            "(Vertex: gcloud 인증 / API 키: GOOGLE_GENAI_USE_VERTEXAI=false)"
+        )
         return
 
     settings = Settings()
