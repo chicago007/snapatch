@@ -436,9 +436,14 @@ def stream_briefing(
         body_preview = resp.text[:500]
         raise RuntimeError(f"Gemini API {resp.status_code}: {body_preview}")
 
+    # SSE 본문은 UTF-8. charset 미지정 시 requests 가 ISO-8859-1 로 디코딩해
+    # Streamlit write_stream 에서 한글이 깨질 수 있다 (로컬 CLI resp.json() 은 정상).
     last_candidate: dict | None = None
-    for raw_line in resp.iter_lines(decode_unicode=True):
-        if not raw_line or not raw_line.startswith("data: "):
+    for raw_bytes in resp.iter_lines(decode_unicode=False):
+        if not raw_bytes:
+            continue
+        raw_line = raw_bytes.decode("utf-8")
+        if not raw_line.startswith("data: "):
             continue
         payload = raw_line.removeprefix("data: ").strip()
         if not payload or payload == "[DONE]":
