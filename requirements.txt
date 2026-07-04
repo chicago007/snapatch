@@ -1,5 +1,5 @@
 # snapatch 통합 의존성 (breaker / diver / dejavu / match)
-# Streamlit Cloud: Python 3.10–3.12 호환 (과도하게 최신 핀은 피함)
+# Streamlit Cloud: manylinux wheel 있는 버전 사용 (소스 빌드 방지)
 
 # --- 공통 / 웹 ---
 streamlit>=1.35,<2
@@ -18,12 +18,12 @@ pydantic>=2.7.0
 
 # --- dejavu (같은 종목 과거 유사 패턴) ---
 pykrx>=1.0.0
-pandas>=2.0.0,<3
-numpy>=1.24.0,<2.5
-scipy>=1.10.0,<1.16
-matplotlib>=3.7.0,<4
+numpy==2.2.6
+pandas>=2.0.0,<2.3
+scipy==1.14.1
+matplotlib>=3.7.0,<3.10
 PyYAML>=6.0
-dtaidistance>=2.4.0
+# dtaidistance: Cloud에서 C 빌드 실패 가능 → requirements-dejavu-extra.txt (로컬 DTW용)
 
 # --- match (유사 종목 검색, DTW) ---
 fastdtw>=0.3.4

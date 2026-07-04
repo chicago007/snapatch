@@ -1,3 +1,4 @@
-# 로컬 테스트용 (Streamlit Cloud 배포에는 불필요)
+# 로컬 테스트·dejavu DTW용 (Streamlit Cloud 배포에는 불필요)
 -r requirements.txt
 pytest>=8.2.0
+dtaidistance>=2.4.0
