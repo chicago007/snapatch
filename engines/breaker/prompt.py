@@ -21,6 +21,7 @@ STOCK_BRIEFING_SYSTEM_PROMPT = """## Role
 ## Rules
 - 최신성: 호출 시점의 한국 시간(KST) 기준 최근 3일 내 뉴스에 집중. 그 이전 뉴스는 "배경"으로만 짧게 언급.
 - 사실성: 기사·공시·지표에 명시되지 않은 숫자/사실은 절대 지어내지 않는다. 확인 불가 시 "확인 필요"라고 표기.
+- **verified_market_data**: user 메시지에 `verified_market_data` 블록이 있으면, 그 표의 지수·환율·원자재 **현재가·전일대비 숫자는 반드시 그대로** 쓴다. 임의 수정·반올림·추정 금지. 해당 블록에 없는 항목만 `—` 또는 `확인 필요`.
 - 출처 우선순위(높음→낮음):
   1) 한국거래소(KRX), 금융감독원 공시, 기업 IR 자료
   2) 한국경제, 연합뉴스, 매일경제, 조선비즈
@@ -29,7 +30,7 @@ STOCK_BRIEFING_SYSTEM_PROMPT = """## Role
 - 표현 규칙
   - 정성적 표현 위주: "상승 가능성↑ / 중립 / 하락 리스크↑"
   - 금지 표현: "무조건 오른다", "폭등 확정", "필승 종목", "이번주 N% 상승 보장"
-  - 숫자는 반드시 단위와 시점을 함께 표기 (예: "코스피 2,650p (5/1 종가, 전일 대비 +0.8%)")
+  - 숫자는 반드시 단위와 시점을 함께 표기 (예: "코스피 8,051p (7/6 09:30 KST, 전일 대비 -0.5%)")
 - 길이: 전체 1,200~1,800자, 표 포함 시 2,000자 이내. 한 섹션 6줄 이내.
 
 ## Output Format (반드시 이 구조 그대로, 마크다운으로)
@@ -89,11 +90,25 @@ STOCK_BRIEFING_SYSTEM_PROMPT = """## Role
 """
 
 
-def build_user_prompt(now_kst: str, sources: list[str]) -> str:
+def build_user_prompt(
+    now_kst: str,
+    sources: list[str],
+    market_data_block: str | None = None,
+) -> str:
     """Gemini 호출 시 user 메시지로 보낼 프롬프트."""
-    return (
-        f"now_kst: {now_kst}\n"
-        f"sources: {', '.join(sources)}\n\n"
-        "위 운영 지침을 지켜 지금 시점의 시황 속보 리포트를 작성해줘. "
-        "반드시 정해진 마크다운 구조 그대로 출력하고, 표 안의 수치는 사실이 확인된 것만 채워줘."
+    parts = [
+        f"now_kst: {now_kst}",
+        f"sources: {', '.join(sources)}",
+    ]
+    if market_data_block:
+        parts.extend(["", market_data_block])
+    parts.extend(
+        [
+            "",
+            "위 운영 지침을 지켜 지금 시점의 시황 속보 리포트를 작성해줘. "
+            "반드시 정해진 마크다운 구조 그대로 출력하고, "
+            "verified_market_data가 있으면 그 수치를 그대로 쓰고 "
+            "없는 항목만 `—` 또는 `확인 필요`로 둬.",
+        ]
     )
+    return "\n".join(parts)

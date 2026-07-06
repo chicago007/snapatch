@@ -24,6 +24,7 @@ import streamlit as st
 
 from hub import bootstrap
 from hub.paths import breaker_output_dir, project_root
+from hub.project_info import AUTHOR_EMAIL, AUTHOR_NAME, GITHUB_URL, VERSION_LABEL
 
 bootstrap.init()
 
@@ -211,12 +212,20 @@ section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.
 .nav-badge.key {background:rgba(245,158,11,.16); color:#fbbf24;
   border:1px solid rgba(245,158,11,.45);}
 .snap-foot {color:var(--muted); font-size:.72rem; padding:14px 8px 4px; line-height:1.5;}
+.snap-foot a {color:var(--brand); text-decoration:none;}
+.snap-foot a:hover {text-decoration:underline;}
+.snap-disclaimer a {color:var(--brand); text-decoration:none;}
+.snap-disclaimer a:hover {text-decoration:underline;}
 
 /* ---- 상단바 ---- */
 .snap-top {display:flex; align-items:center; justify-content:space-between;
   margin:2px 0 18px;}
 .snap-top .t-title {font-size:2rem; font-weight:800; color:var(--text);
-  letter-spacing:-1px;}
+  letter-spacing:-1px; display:flex; align-items:center; gap:10px;}
+.snap-top .t-version {font-size:.78rem; font-weight:700; color:var(--brand);
+  background:color-mix(in srgb,var(--brand) 14%, transparent);
+  border:1px solid color-mix(in srgb,var(--brand) 35%, transparent);
+  padding:3px 9px; border-radius:999px; letter-spacing:.03em;}
 .snap-top .t-right {display:flex; align-items:center; gap:16px;}
 .snap-top .t-date {color:var(--muted); font-size:.86rem; font-weight:600;}
 .theme-toggle {display:inline-flex; background:var(--card); border:1px solid var(--border);
@@ -352,7 +361,8 @@ def _render_topbar(page: str, theme: str) -> None:
         '</div>'
     )
     st.markdown(
-        '<div class="snap-top"><div class="t-title">snapatch</div>'
+        f'<div class="snap-top"><div class="t-title">snapatch'
+        f'<span class="t-version">{VERSION_LABEL}</span></div>'
         f'<div class="t-right">{toggle}'
         f'<span class="t-date">{now}</span></div></div>',
         unsafe_allow_html=True,
@@ -413,10 +423,21 @@ def _render_home(theme: str) -> None:
                     unsafe_allow_html=True,
                 )
     st.markdown(
-        '<div class="snap-disclaimer">© 2026 snapatch · '
-        '투자에 대한 모든 책임은 투자 본인에게 있습니다.</div>',
+        f'<div class="snap-disclaimer">© 2026 snapatch · '
+        f'<a href="{GITHUB_URL}" target="_blank" rel="noopener">GitHub</a> · '
+        f'{AUTHOR_NAME}<br>'
+        'AI·시세 정보는 참고용이며 투자 판단·손익 책임은 이용자 본인에게 있습니다.</div>',
         unsafe_allow_html=True,
     )
+    with st.expander("About snapatch", expanded=False):
+        st.markdown(
+            f"**{VERSION_LABEL}** · **{AUTHOR_NAME}**  \n"
+            f"[GitHub]({GITHUB_URL}) · "
+            f"[{AUTHOR_EMAIL}](mailto:{AUTHOR_EMAIL}) · "
+            f"[Changelog]({GITHUB_URL}/blob/main/CHANGELOG.md)  \n\n"
+            "주식 속보 · AI 뉴스 분석 · 과거 패턴 · 유사 종목을 "
+            "하나의 대시보드에서 사용할 수 있는 통합 플랫폼입니다."
+        )
 
 
 def _render_sidebar(page: str, theme: str) -> None:
@@ -457,8 +478,9 @@ def _render_sidebar(page: str, theme: str) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<div class="snap-foot">breaker · diver · dejavu · match<br>'
-            '주식 속보 · 분석 · 유사도 검색</div>',
+            f'<div class="snap-foot">{VERSION_LABEL} · breaker · diver · dejavu · match<br>'
+            f'<a href="{GITHUB_URL}" target="_blank" rel="noopener">GitHub</a> · '
+            f'{AUTHOR_NAME}</div>',
             unsafe_allow_html=True,
         )
 

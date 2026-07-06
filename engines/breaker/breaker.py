@@ -24,7 +24,7 @@ Cursor에서 그대로 실행할 수 있는 단일 파이썬 스크립트.
     python -m engines.breaker.breaker --print
 
 옵션:
-    --model     사용할 Gemini 모델 (기본: gemini-2.5-pro)
+    --model     사용할 Gemini 모델 (기본: GEMINI_MODEL 또는 gemini-2.5-flash)
     --sources   매체 목록 콤마 구분으로 덮어쓰기
     --print     파일로 저장하지 않고 콘솔에만 출력
     --once-now  loop 모드에서 시작 직후 1회 즉시 생성
@@ -46,6 +46,11 @@ from pathlib import Path
 
 import requests
 
+from .market_data import (
+    MarketSnapshot,
+    fetch_market_snapshot,
+    format_market_data_block,
+)
 from .prompt import STOCK_BRIEFING_SYSTEM_PROMPT, build_user_prompt
 
 ENGINE_DIR = Path(__file__).resolve().parent
@@ -131,8 +136,10 @@ class GeneratePreset:
     thinking_budget: int | None = None
 
 
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+
 FAST_PRESET = GeneratePreset(
-    model="gemini-2.5-flash",
+    model=DEFAULT_GEMINI_MODEL,
     timeout=60,
     max_output_tokens=8192,
     use_google_search=False,
@@ -142,7 +149,7 @@ FAST_PRESET = GeneratePreset(
 )
 
 ACCURATE_PRESET = GeneratePreset(
-    model="gemini-2.5-pro",
+    model=DEFAULT_GEMINI_MODEL,
     timeout=120,
     max_output_tokens=8192,
     use_google_search=True,
@@ -150,6 +157,18 @@ ACCURATE_PRESET = GeneratePreset(
     max_retry=2,
     thinking_budget=2048,
 )
+
+
+def resolve_breaker_model(
+    preset: GeneratePreset,
+    override: str | None = None,
+) -> str:
+    """CLI/UI override → GEMINI_MODEL → preset 순으로 모델 결정."""
+    for candidate in (override, os.environ.get("GEMINI_MODEL"), preset.model):
+        value = (candidate or "").strip()
+        if value:
+            return value
+    return DEFAULT_GEMINI_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +265,18 @@ def _retry_after_seconds(resp: requests.Response) -> float | None:
         return None
 
 
+def _resolve_market_data_block(
+    now_kst: str,
+    market_snapshot: MarketSnapshot | None = None,
+    *,
+    use_market_data: bool = True,
+) -> str | None:
+    if not use_market_data:
+        return None
+    snapshot = market_snapshot or fetch_market_snapshot(now_kst)
+    return format_market_data_block(snapshot)
+
+
 def _build_briefing_body(
     model: str,
     sources: list[str],
@@ -255,8 +286,15 @@ def _build_briefing_body(
     temperature: float,
     extra_user_instruction: str | None = None,
     thinking_budget: int | None = None,
+    market_data_block: str | None = None,
+    *,
+    use_market_data: bool = True,
 ) -> dict:
-    user_prompt = build_user_prompt(now_kst, sources)
+    resolved_market_block = market_data_block
+    if resolved_market_block is None and use_market_data:
+        resolved_market_block = _resolve_market_data_block(now_kst)
+
+    user_prompt = build_user_prompt(now_kst, sources, resolved_market_block)
     if extra_user_instruction:
         user_prompt = f"{user_prompt}\n\n{extra_user_instruction}"
 
@@ -330,10 +368,14 @@ def generate_briefing(
     temperature: float = 0.4,
     extra_user_instruction: str | None = None,
     thinking_budget: int | None = None,
+    market_snapshot: MarketSnapshot | None = None,
+    *,
+    use_market_data: bool = True,
 ) -> str:
     """Gemini API를 호출해 시황 리포트 마크다운을 반환한다.
 
     Google Search Grounding을 켜서 최신 뉴스 인용이 가능하도록 한다.
+    지수·환율은 pykrx/Yahoo Finance 실측값을 프롬프트에 주입한다.
     """
     if not api_key:
         raise RuntimeError(
@@ -349,6 +391,12 @@ def generate_briefing(
         "x-goog-api-key": api_key,
     }
 
+    market_data_block = _resolve_market_data_block(
+        now_kst,
+        market_snapshot,
+        use_market_data=use_market_data,
+    )
+
     body = _build_briefing_body(
         model=model,
         sources=sources,
@@ -358,6 +406,8 @@ def generate_briefing(
         temperature=temperature,
         extra_user_instruction=extra_user_instruction,
         thinking_budget=thinking_budget,
+        market_data_block=market_data_block,
+        use_market_data=False,
     )
 
     resp = _post_with_retry(url, headers, body, timeout)
@@ -419,6 +469,9 @@ def stream_briefing(
     temperature: float = 0.4,
     extra_user_instruction: str | None = None,
     thinking_budget: int | None = None,
+    market_snapshot: MarketSnapshot | None = None,
+    *,
+    use_market_data: bool = True,
 ) -> Iterator[str]:
     """Gemini streamGenerateContent 로 리포트를 점진적으로 생성한다."""
     if not api_key:
@@ -434,6 +487,11 @@ def stream_briefing(
         "Content-Type": "application/json",
         "x-goog-api-key": api_key,
     }
+    market_data_block = _resolve_market_data_block(
+        now_kst,
+        market_snapshot,
+        use_market_data=use_market_data,
+    )
     body = _build_briefing_body(
         model=model,
         sources=sources,
@@ -443,6 +501,8 @@ def stream_briefing(
         temperature=temperature,
         extra_user_instruction=extra_user_instruction,
         thinking_budget=thinking_budget,
+        market_data_block=market_data_block,
+        use_market_data=False,
     )
 
     resp = requests.post(
@@ -506,6 +566,24 @@ def build_retry_instruction(missing: list[str]) -> str:
     )
 
 
+def _print_market_snapshot_summary(snapshot: MarketSnapshot) -> None:
+    if not snapshot.quotes:
+        print("[시세] 실측 데이터를 가져오지 못했습니다.")
+        if snapshot.errors:
+            print(f"       {', '.join(snapshot.errors)}")
+        print()
+        return
+
+    print("[시세] pykrx / Yahoo Finance 실측값:")
+    for quote in snapshot.quotes:
+        price = f"{quote.price:,.2f}" if quote.price is not None else "—"
+        pct = f"{quote.change_pct:+.2f}%" if quote.change_pct is not None else "—"
+        print(f"       {quote.name}: {price} ({pct}) [{quote.source}]")
+    if snapshot.errors:
+        print(f"       조회 실패: {', '.join(snapshot.errors)}")
+    print()
+
+
 def generate_with_retry(
     api_key: str,
     preset: GeneratePreset,
@@ -517,6 +595,7 @@ def generate_with_retry(
     attempts = 0
     missing: list[str] = []
     extra_instruction: str | None = None
+    market_snapshot = fetch_market_snapshot(now_kst)
 
     for attempt in range(1, preset.max_retry + 2):
         attempts = attempt
@@ -531,6 +610,7 @@ def generate_with_retry(
             temperature=preset.temperature,
             extra_user_instruction=extra_instruction,
             thinking_budget=preset.thinking_budget,
+            market_snapshot=market_snapshot,
         )
         missing = detect_missing_commodities(text)
         if not missing:
@@ -614,7 +694,7 @@ def preset_from_args(args: argparse.Namespace) -> GeneratePreset:
 
 
 def model_from_args(args: argparse.Namespace, preset: GeneratePreset) -> str:
-    return (args.model or "").strip() or preset.model
+    return resolve_breaker_model(preset, args.model)
 
 
 def cmd_once(args: argparse.Namespace) -> int:
@@ -635,6 +715,9 @@ def cmd_once(args: argparse.Namespace) -> int:
     else:
         print("리포트 생성 중… (정확 모드, 보통 20~40초 소요)\n")
 
+    market_snapshot = fetch_market_snapshot(label)
+    _print_market_snapshot_summary(market_snapshot)
+
     started_at = time.perf_counter()
     try:
         content = generate_briefing(
@@ -647,6 +730,7 @@ def cmd_once(args: argparse.Namespace) -> int:
             max_output_tokens=preset.max_output_tokens,
             temperature=preset.temperature,
             thinking_budget=preset.thinking_budget,
+            market_snapshot=market_snapshot,
         )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)
@@ -725,6 +809,8 @@ def run_one(
     label = label_override or now_kst_label(when)
     resolved_model = (model or "").strip() or preset.model
     print_header(label)
+    market_snapshot = fetch_market_snapshot(label)
+    _print_market_snapshot_summary(market_snapshot)
     started_at = time.perf_counter()
     try:
         content = generate_briefing(
@@ -737,6 +823,7 @@ def run_one(
             max_output_tokens=preset.max_output_tokens,
             temperature=preset.temperature,
             thinking_budget=preset.thinking_budget,
+            market_snapshot=market_snapshot,
         )
     except Exception as e:
         print(f"[오류] {e}", file=sys.stderr)

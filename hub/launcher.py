@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from hub.project_info import AUTHOR_NAME, GITHUB_URL, VERSION_LABEL
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 _ENGINES: tuple[tuple[str, str, str], ...] = (
@@ -59,7 +61,8 @@ def _prompt_choice(prompt: str, valid: set[str]) -> str:
 def _print_header() -> None:
     print()
     print("=" * 56)
-    print("  snapatch — 주식 속보 · 분석 · 유사도 검색")
+    print(f"  snapatch {VERSION_LABEL} — 주식 속보 · 분석 · 유사도 검색")
+    print(f"  {AUTHOR_NAME} · {GITHUB_URL}")
     print("=" * 56)
     print()
 
@@ -107,7 +110,7 @@ def _run_engine_cli(engine: str) -> int:
         print()
         print("  생성 모드를 선택하세요.\n")
         print("  [1] 빠름 (flash, 검색 생략, 약 5-10초)")
-        print("  [2] 정확 (pro, Google 검색, 약 20-40초)")
+        print("  [2] 정확 (flash + Google 검색, 약 20-40초)")
         print()
         mode = _prompt_choice("번호 입력: ", {"1", "2"})
         if mode == "1":

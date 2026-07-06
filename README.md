@@ -1,82 +1,149 @@
-# 📈 snapatch
+# 📈 Snapatch
+
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.35+-FF4B4B?logo=streamlit&logoColor=white)
+![Gemini](https://img.shields.io/badge/Gemini-API-4285F4?logo=google&logoColor=white)
+![License](https://img.shields.io/badge/License-TBD-lightgrey)
+
+![Version](https://img.shields.io/badge/version-v1.00-blue)
+
+> **AI-Powered Stock Intelligence Platform**
+>
+> Real-time market reports, AI news analysis, historical pattern search,
+> and similar-stock discovery — all in one dashboard.
 
 주식 **속보 · 분석 · 유사도 검색**을 하나의 Streamlit 웹앱으로 통합한 플랫폼입니다.
-4개의 캡스톤 프로젝트를 단일 앱으로 묶었습니다.
+4개의 프로젝트(breaker · diver · dejavu · match)를 단일 앱으로 묶었습니다.
 
-| 기능 | 이름 | 설명 | 원본 |
-|------|------|------|------|
-| 📊 속보 | **breaker** | Gemini 로 한국어 시황 리포트 생성 | `capstone01` |
-| 🔎 분석 | **diver** | 네이버 뉴스 + Gemini 키워드 심층 분석 | `capstone02` |
-| 🕰️ 유사 패턴 | **dejavu** | 같은 종목의 과거 유사 구간 + 이후 수익률 | `capstone001` |
-| 🧬 유사 종목 | **match** | 1차 SAX 필터 + 2차 FastDTW 유사 종목 검색 | `capstone002` |
+✨ **Four AI-powered investment tools in one platform**
 
-## 프로젝트 구조
+| | | |
+|---|---|---|
+| 📊 **breaker** | **Breaking Market Reports** | Gemini 기반 한국어 시황 속보 |
+| 🔎 **diver** | **News Intelligence** | 네이버 뉴스 + AI 키워드 심층 분석 |
+| 🕰 **dejavu** | **Historical Pattern Search** | 같은 종목의 과거 유사 구간 탐색 |
+| 🧬 **match** | **Similar Stock Discovery** | SAX + FastDTW 유사 종목 검색 |
 
+---
+
+## 💡 Why Snapatch?
+
+개인 투자자는 시장을 보려면 보통 여러 도구를 오가야 합니다.
+
+- 뉴스 사이트에서 헤드라인 확인
+- AI 챗봇에 따로 질문
+- 차트·패턴 분석은 또 다른 플랫폼
+- 유사 종목 검색은 별도 스크리너
+
+**Snapatch**는 이 흐름을 하나의 대시보드와 CLI로 묶습니다.
+뉴스 읽기 → AI 분석 → 과거 패턴 → 유사 종목까지, 한 프로젝트 안에서 이어집니다.
+
+---
+
+## ✨ Features
+
+4개의 프로젝트를 snapatch 하나로 통합했습니다. **개발: 조르바신부**
+
+| snapatch | 기능 | AI / Algorithm |
+|---|---|---|
+| 📊 **breaker** | 한국어 시황 속보 (실측 지수 주입) | Gemini + pykrx / Yahoo Finance |
+| 🔎 **diver** | 키워드 뉴스 수집·필터·심층 분석 | Gemini + Vertex AI |
+| 🕰 **dejavu** | 과거 유사 구간(6트랙) + 이후 수익률 | Pearson + DTW |
+| 🧬 **match** | SAX 1차 필터 → FastDTW 유사 종목 | SAX + FastDTW |
+
+---
+
+## 🎬 Demo
+
+> GIF·스크린샷은 [`docs/images/`](docs/images/)에 추가 예정입니다.
+> 지금은 로컬 실행 후 `outputs/` 폴더에서 생성 결과를 확인할 수 있습니다.
+
+| Dashboard | breaker 출력 예시 |
+|-----------|-------------------|
+| `python run.py` → 웹 UI | `outputs/breaker/` 아래 마크다운 리포트 |
+
+breaker는 **pykrx / Yahoo Finance로 조회한 실측 지수**를 LLM 프롬프트에 주입해
+코스피·환율 등 숫자 할루시네이션을 줄입니다.
+
+---
+
+## ⭐ Highlights
+
+- 4개 독립 캡스톤을 **하나의 Hub + Engines** 구조로 통합
+- **웹 UI**(Streamlit)와 **터미널 CLI** 모두 지원
+- breaker: 실시간 시세 주입 + Gemini 리포트 생성
+- diver: 네이버 뉴스 파이프라인 + Gemini/Vertex AI 분석
+- dejavu: 6트랙(주가 z / 로그 / MA z × Pearson·DTW) 유사 패턴
+- match: SAX 1차 후보 축소 → FastDTW 2차 정밀 매칭
+- 기능별 API 키만 설정해도 해당 모듈 단독 실행 가능
+
+---
+
+## 🏗 Architecture
+
+```text
+User
+  │
+  ├─ run.py / streamlit ──► Hub (launcher · UI · CLI · bootstrap)
+  │                              │
+  │                              ▼
+  │                         Analysis Engines
+  │                         ├── breaker  (Gemini + market data)
+  │                         ├── diver    (Naver + Gemini)
+  │                         ├── dejavu   (pykrx + DTW)
+  │                         └── match    (pykrx + SAX + FastDTW)
+  │                              │
+  │                              ▼
+  └──────────────────────── outputs/
 ```
-snapatch/
-├── run.py                  # 시작 메뉴 (UI / 터미널 선택)
-├── hub/                    # 통합·실행 계층 (엔진을 UI/CLI 로 묶음)
-│   ├── launcher.py         # UI·CLI 선택 메뉴
-│   ├── ui/
-│   │   └── maingate.py     # Streamlit 웹 대시보드
-│   ├── bootstrap.py        # engines 경로 + .env 초기화
-│   ├── paths.py            # outputs/ 경로 헬퍼
-│   ├── cli/
-│   │   ├── breaker.py      # breaker 터미널 CLI
-│   │   ├── diver.py        # diver 터미널 CLI
-│   │   ├── dejavu.py      # dejavu 터미널 CLI
-│   │   └── match.py       # match 터미널 CLI
-│   └── features/
-│       ├── breaker.py      # 시황 속보 페이지
-│       ├── diver.py        # 키워드 뉴스 분석 페이지
-│       ├── dejavu.py       # 과거 유사 패턴 페이지
-│       └── match.py        # 유사 종목 검색 페이지
-├── engines/                # 캡스톤 분석 엔진 (breaker, diver, dejavu, match)
-│   ├── breaker/            # breaker.py, prompt.py
-│   ├── diver/              # diver.py, config.py, pipeline.py, prompt.md
-│   ├── dejavu/             # dejavu.py, dejavu.yml
-│   └── match/              # match.py, match/ 패키지, tickers.csv, uni.csv
-├── requirements.txt
-├── .env.example
-└── README.md
-```
 
-각 기능 페이지(`hub/features/*.py`)는 `engines/` 의 원본 코드를 import 해서
-Streamlit UI 로 감싸는 얇은 어댑터입니다. 핵심 로직은 원본 그대로 유지됩니다.
+상세 구조는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
 
-## 설치
+---
+
+## 🛠 Tech Stack
+
+| Layer | Technologies |
+|-------|--------------|
+| UI / CLI | Python, Streamlit |
+| AI | Gemini API, Vertex AI, Google Search Grounding |
+| Market data | pykrx, Yahoo Finance (requests) |
+| Analysis | SAX, FastDTW, Pearson, DTW (dtaidistance) |
+| Data | Pandas, NumPy, SciPy |
+
+---
+
+## 🚀 Quick Start
+
+### 1. 설치
 
 ```bash
-python -m venv .venv
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-# macOS/Linux
-# source .venv/bin/activate
+git clone https://github.com/chicago007/snapatch.git
+cd snapatch
 
+python -m venv .venv
+source .venv/bin/activate          # Windows: .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
-## 환경변수 설정
+### 2. 환경변수
 
 ```bash
-copy .env.example .env   # Windows
-# cp .env.example .env   # macOS/Linux
+cp .env.example .env   # Windows: copy .env.example .env
 ```
 
-`.env` 에 필요한 키를 채웁니다. **기능별로 필요한 키만 채워도 해당 기능은 동작**합니다.
+**기능별로 필요한 키만 채워도 해당 기능은 동작**합니다.
 
-- **breaker**: `GEMINI_API_KEY`
-- **diver**: `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT`
-  (Vertex AI 는 `gcloud auth application-default login` 인증 필요)
-- **dejavu**: 키 불필요 (pykrx 공개 시세)
-- **match**: 키 불필요 (필요 시 `KRX_ID`/`KRX_PW`, UI 에서도 입력 가능)
+| 기능 | 필요 키 |
+|------|---------|
+| breaker | `GEMINI_API_KEY` |
+| diver | `NAVER_CLIENT_ID`, `NAVER_CLIENT_SECRET`, `GOOGLE_CLOUD_PROJECT` (+ `gcloud auth application-default login`) |
+| dejavu | 없음 (pykrx 공개 시세) |
+| match | 없음 (선택: `KRX_ID` / `KRX_PW`) |
 
-## 실행
+### 3. 실행
 
-### 시작 메뉴 (권장)
-
-프로젝트 루트에서 실행하면 **웹 UI / 터미널 CLI** 를 고르고,
-터미널 선택 시 **breaker · diver · dejavu · match** 중 하나를 골라 실행합니다.
+**시작 메뉴 (권장)**
 
 ```bash
 python run.py
@@ -84,88 +151,119 @@ python run.py
 python -m hub
 ```
 
-### 웹 UI (직접 실행)
+**웹 UI 직접 실행**
 
 ```bash
 python -m streamlit run hub/ui/maingate.py
 ```
 
-브라우저가 열리면 왼쪽 사이드바에서 기능을 선택해 사용합니다.
-`.streamlit/config.toml` 에 `headless = true` 이면 브라우저가 자동으로 열리지 않으므로
-http://localhost:8501 을 직접 여세요.
+브라우저: http://localhost:8501
 
-### breaker 터미널 CLI (capstone01)
+---
 
-프로젝트 루트에서:
-
-```bash
-python -m hub.cli.breaker              # 즉시 1회 생성 (기본, once 생략 가능)
-python -m hub.cli.breaker --print      # 콘솔만 출력
-python -m hub.cli.breaker once --print   # 위와 동일
-python -m hub.cli.breaker loop           # 평일 09~15시 KST 매시 정각
-python -m hub.cli.breaker doctor         # GEMINI_API_KEY 확인
-python -m hub.cli.breaker --model gemini-2.5-flash once
-```
-
-### diver 터미널 CLI (capstone02)
+## 📟 CLI
 
 프로젝트 루트에서:
 
 ```bash
+# breaker — 시황 속보
+python -m hub.cli.breaker              # 1회 생성 (정확 모드)
+python -m hub.cli.breaker --fast       # 빠른 모드
+python -m hub.cli.breaker loop         # 평일 09~15시 KST 매시
+python -m hub.cli.breaker doctor       # API 키 확인
+
+# diver — 키워드 뉴스 분석
 python -m hub.cli.diver --query 삼성전자
-python -m hub.cli.diver --query 삼성전자 --format text
-python -m hub.cli.diver --query 삼성전자 --fast --format text
-python -m hub.cli.diver --query 삼성전자 --target-count 5 --max-days 30 --debug
-```
 
-환경변수 `DEFAULT_TARGET_COUNT`, `SKIP_CONTENT`, `DEFAULT_OUTPUT_FORMAT` 등은
-`.env`에서 기본값으로 적용됩니다.
-
-### dejavu 터미널 CLI (capstone001)
-
-프로젝트 루트에서:
-
-```bash
+# dejavu — 과거 유사 패턴
 python -m hub.cli.dejavu
-python -m hub.cli.dejavu engines/dejavu/dejavu.yml
-```
 
-설정은 `engines/dejavu/dejavu.yml` 을 수정하거나 YAML 경로를 인자로 넘깁니다.
-6트랙(주가 z / 로그 / MA z × Pearson·DTW) 결과는 `outputs/dejavu/` 또는
-설정의 `output_dir` 에 저장됩니다 (차트·CSV·TXT·MD).
-
-### match 터미널 CLI (capstone002)
-
-프로젝트 루트에서:
-
-```bash
+# match — 유사 종목 검색
 python -m hub.cli.match
-python engines/match/match.py
 ```
 
-설정은 `engines/match/match/config.py` 의 `FormaConfig` 기본값을 수정합니다.
-1차 SAX·특징 필터 → 2차 FastDTW 후 TOP N 종목과 차트가 `outputs/match/` 에 저장됩니다.
-후보 종목은 `engines/match/uni.csv`(기본) 또는 `engines/match/tickers.csv` 를 사용합니다.
+---
 
-### diver 테스트 (capstone02 하네스)
+## 📂 Project Structure
+
+```text
+snapatch/
+├── run.py              # 시작 메뉴 (웹 UI / CLI)
+├── hub/                # launcher · UI · CLI · bootstrap
+├── engines/            # breaker · diver · dejavu · match
+├── outputs/            # 생성 결과 (gitignore)
+├── docs/               # 상세 문서
+├── requirements.txt
+└── .env.example
+```
+
+각 `hub/features/*.py`는 `engines/` 원본을 import하는 얇은 어댑터입니다.
+
+---
+
+## 📦 Outputs
+
+| Engine | 경로 |
+|--------|------|
+| breaker | `outputs/breaker/` |
+| diver | `outputs/diver/` |
+| dejavu | `outputs/dejavu/` |
+| match | `outputs/match/` |
+
+---
+
+## 🗺 Roadmap
+
+- [x] 4개 캡스톤 통합 (Hub + Engines)
+- [x] Streamlit 대시보드 + CLI
+- [x] breaker 실측 시세 주입 (pykrx / Yahoo Finance)
+- [x] v1.00 릴리스 · CHANGELOG 도입
+- [ ] Demo GIF · 스크린샷
+- [ ] Portfolio analysis
+- [ ] ETF similarity
+- [ ] RAG knowledge base
+- [ ] Multi-language support
+
+전체 로드맵: [docs/ROADMAP.md](docs/ROADMAP.md)
+
+---
+
+## 📚 Documentation
+
+| 문서 | 설명 |
+|------|------|
+| [CHANGELOG.md](CHANGELOG.md) | 변경 이력 (Keep a Changelog) |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 아키텍처 상세 |
+| [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md) | → CHANGELOG 안내 |
+| [docs/DEVELOPMENT_NOTES.md](docs/DEVELOPMENT_NOTES.md) | 개발 과정·버전 메모 |
+
+---
+
+## 🧪 Tests
 
 ```bash
 pytest tests/ -q
 ```
 
-## 결과물
+---
 
-모든 생성물은 `outputs/` 아래에 모입니다.
+## Author
 
-- **breaker** 시황 리포트: `outputs/breaker/` (저장 옵션 켤 때)
-- **diver** 분석 결과: `outputs/diver/` (JSON + TXT, CLI 기본 저장 / 웹 UI 옵션)
-- **dejavu** 차트·표·결과문서: `outputs/dejavu/` (CLI는 평면, 웹 UI는 `<종목>_<시각>/` 하위)
-- **match** 차트: `outputs/match/`
+**조르바신부**
 
-`outputs/`, `.env` 는 `.gitignore` 에 포함되어 커밋되지 않습니다.
+- GitHub: [@chicago007](https://github.com/chicago007)
+- Repository: [github.com/chicago007/snapatch](https://github.com/chicago007/snapatch)
+- Email: [chicago007@hotmail.com](mailto:chicago007@hotmail.com)
 
-## 참고
+4개 캡스톤(capstone01 · capstone02 · capstone001 · capstone002)을 snapatch로 통합한 개인 프로젝트입니다.  
+매핑은 위 [Features](#-features) 표를 참고하세요.
 
-- **match** 는 capstone002 `match` 패키지(1차 SAX + 2차 FastDTW)를 사용합니다.
-  웹 UI에서는 KRX 로그인 프롬프트를 생략하고 `.env`(`KRX_ID`/`KRX_PW`) 또는 UI 입력으로 처리합니다.
-- 후보 종목: `engines/match/uni.csv`(기본), `engines/match/tickers.csv`(대안)
+---
+
+## License
+
+License is not specified yet.
+
+---
+
+Built with **Python · Streamlit · Gemini · Vertex AI · pykrx · SAX · FastDTW** · **조르바신부**
