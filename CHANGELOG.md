@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 where practical.
 
+## [1.02] - 2026-07-07
+
+Web UX and documentation release.
+
+### Added
+
+- `docs/WEB_USER_GUIDE.md` — browser-only guide (no API keys, download-first)
+- `docs/USER_GUIDE.md` — local · CLI guide
+- Web UI **사용 설명서** page with `local_guide` in-app navigation
+- `hub/runtime.py` — Streamlit Cloud vs local output persistence detection
+
+### Changed
+
+- Web UI: hide `outputs/` save options on Streamlit Cloud; emphasize Markdown download
+- Web API-key errors use user-friendly messages (no `.env` instructions on Cloud)
+- Sidebar: usage guide moved to bottom with separator
+- breaker Cloud: Yahoo fallback before pykrx; index table replace fallback when patch fails
+
+### Fixed
+
+- Streamlit Cloud `ImportError` for version display (`importlib.reload` on `project_info`)
+- Broken `USER_GUIDE.md` markdown links in web UI redirecting to home
+- Web UI stale version label after VERSION bump (`read_version_label`)
+
+[1.02]: https://github.com/chicago007/snapatch/releases/tag/v1.02
+
 ## [1.01] - 2026-07-07
 
 Patch release: breaker domestic market accuracy and diver JSON reliability.

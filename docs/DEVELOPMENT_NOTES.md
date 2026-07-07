@@ -15,6 +15,14 @@ Snapatch는 4개의 독립 캡스톤 프로젝트를 하나의 플랫폼으로 �
 
 핵심 로직은 `engines/`에 두고, `hub/`는 UI·CLI·환경 초기화만 담당합니다.
 
+## v1.02 (2026-07-07)
+
+웹 이용자·문서·Cloud UX.
+
+- **웹/로컬 설명서 분리**: `WEB_USER_GUIDE.md`(브라우저, 키 불필요, 다운로드 저장) · `USER_GUIDE.md`(로컬/CLI)
+- **웹 UI**: 사용 설명서 페이지, 사이드바 하단 배치, `local_guide` 앱 내 이동
+- **Cloud**: `outputs/` 저장 UI 숨김, breaker 시세 Yahoo 우선·표 후처리 강화, 버전/Import 오류 수정
+
 ## v1.01 (2026-07-07)
 
 breaker·diver 안정화 패치.
@@ -36,7 +44,7 @@ breaker·diver 안정화 패치.
 
 버전을 올릴 때마다 아래를 **함께** 수정합니다.
 
-1. `hub/project_info.py` — `VERSION` (예: `"1.01"`)
+1. `hub/project_info.py` — `VERSION` (예: `"1.02"`)
 2. [CHANGELOG.md](../CHANGELOG.md) — 새 `[x.xx] - YYYY-MM-DD` 섹션
 3. 이 파일 — `## vx.xx` 절에 배경·의사결정 요약
 4. (선택) README 버전 배지, Git tag `vx.xx`
