@@ -1,15 +1,13 @@
-"""breaker용 실시간 시세 조회 — pykrx 우선, 불가 시 Yahoo Finance.
+"""breaker용 실시간 시세 조회 — 네이버금융(국내) · pykrx · Yahoo Finance.
 
-국내 지수(코스피·코스닥): pykrx(KRX) → Yahoo Finance(^KS11, ^KQ11)
+국내 지수(코스피·코스닥): 네이버 금융 실시간 → pykrx(KRX) → Yahoo (^KS11, ^KQ11)
 해외 지수·환율·원자재: Yahoo Finance chart API (requests, 별도 패키지 불필요)
-
-네이버 금융(finance.naver.com)은 비공식 polling API가 있으나
-문서화·안정성이 없어 기본 체인에는 넣지 않았다.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -25,12 +23,25 @@ _YAHOO_HEADERS = {
         "Mozilla/5.0 (compatible; snapatch-breaker/1.0; +https://github.com/chicago007/snapatch)"
     ),
 }
+_NAVER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; snapatch-breaker/1.0)",
+    "Referer": "https://finance.naver.com/",
+}
 _YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+_NAVER_INDEX_URL = (
+    "https://polling.finance.naver.com/api/realtime/domestic/index/{code}"
+)
 
 # pykrx 지수 티커 (1001=코스피, 2001=코스닥)
 _PYKRX_INDICES: dict[str, str] = {
     "코스피": "1001",
     "코스닥": "2001",
+}
+
+# 네이버 금융 실시간 지수 코드
+_NAVER_INDEX_CODES: dict[str, str] = {
+    "코스피": "KOSPI",
+    "코스닥": "KOSDAQ",
 }
 
 # Yahoo 심볼 (국내는 pykrx 실패 시 fallback)
@@ -76,6 +87,72 @@ def _pct_change(current: float, previous: float) -> float:
     if previous == 0:
         return 0.0
     return (current - previous) / previous * 100.0
+
+
+def _parse_number(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    cleaned = str(value).replace(",", "").strip()
+    if not cleaned or cleaned == "-":
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _fetch_naver_index(name: str, code: str) -> MarketQuote | None:
+    try:
+        resp = requests.get(
+            _NAVER_INDEX_URL.format(code=code),
+            headers=_NAVER_HEADERS,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        payload = resp.json()
+        rows = payload.get("datas") or []
+        if not rows:
+            return None
+        row: dict[str, Any] = rows[0]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("naver %s failed: %s", name, exc)
+        return None
+
+    price = _parse_number(row.get("closePrice"))
+    if price is None or price <= 0:
+        return None
+
+    change = _parse_number(row.get("compareToPreviousClosePrice"))
+    change_pct = _parse_number(row.get("fluctuationsRatio"))
+    if change is None and change_pct is not None:
+        prev = price / (1 + change_pct / 100.0) if change_pct != -100 else price
+        change = price - prev
+    if change_pct is None and change is not None:
+        prev = price - change
+        change_pct = _pct_change(price, prev) if prev else 0.0
+
+    market_state = str(row.get("marketStatus") or "").upper() or None
+    traded_at = row.get("localTradedAt")
+    as_of = "네이버금융"
+    if traded_at:
+        try:
+            dt = datetime.fromisoformat(str(traded_at))
+            as_of = f"{dt.strftime('%Y-%m-%d %H:%M')} KST (네이버금융)"
+        except ValueError:
+            as_of = f"{traded_at} (네이버금융)"
+
+    return MarketQuote(
+        name=name,
+        price=price,
+        change=change,
+        change_pct=change_pct,
+        currency="KRW",
+        source="naver",
+        as_of=as_of,
+        market_state=market_state,
+    )
 
 
 def _try_apply_krx_login() -> None:
@@ -202,6 +279,12 @@ def _fetch_yahoo_quote(name: str, symbol: str) -> MarketQuote | None:
 
 
 def _fetch_domestic_index(name: str) -> MarketQuote | None:
+    naver_code = _NAVER_INDEX_CODES.get(name)
+    if naver_code:
+        quote = _fetch_naver_index(name, naver_code)
+        if quote is not None:
+            return quote
+
     ticker = _PYKRX_INDICES.get(name)
     if ticker:
         quote = _fetch_pykrx_index(name, ticker)
@@ -297,7 +380,8 @@ def format_market_data_block(snapshot: MarketSnapshot) -> str:
         f"조회 시각: {snapshot.fetched_at}",
         "",
         "아래 수치는 API 실측값이다. `## 1) 지수 요약` 표에서 해당 항목은 "
-        "**반드시 이 숫자만** 사용하고, 소수점 자리도 임의로 바꾸지 마라.",
+        "**반드시 이 숫자만** 사용하고, 소수점 자리도 임의로 바꾸지 마라. "
+        "국내 지수(코스피·코스닥)는 네이버금융 실시간·종가 기준이며 장중이면 현재가를 쓴다.",
         "verified_market_data에 없는 행만 `—` 또는 `확인 필요`로 둬라.",
         "",
         "| 지수 | 현재가 | 전일대비 | 출처 | 시점 |",
@@ -320,3 +404,90 @@ def format_market_data_block(snapshot: MarketSnapshot) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+_INDEX_TABLE_NAMES = frozenset(
+    {
+        "코스피",
+        "코스닥",
+        "S&P500",
+        "나스닥",
+        "닛케이225",
+        "USD/KRW",
+        "WTI",
+        "금",
+        "은",
+    }
+)
+
+
+def _format_table_change(quote: MarketQuote) -> str:
+    if quote.change is None or quote.change_pct is None:
+        return "—"
+    sign = "+" if quote.change >= 0 else ""
+    return f"{sign}{quote.change:,.2f} ({sign}{quote.change_pct:.2f}%)"
+
+
+def _format_data_timing_line(snapshot: MarketSnapshot) -> str:
+    domestic_bits: list[str] = []
+    for name in ("코스피", "코스닥"):
+        quote = snapshot.quote_by_name(name)
+        if quote is None:
+            continue
+        state = (
+            "장중"
+            if (quote.market_state or "").upper() == "OPEN"
+            else "종가"
+        )
+        domestic_bits.append(f"{name} {state} ({quote.as_of})")
+
+    overseas = [
+        name
+        for name in ("S&P500", "나스닥", "닛케이225")
+        if snapshot.quote_by_name(name) is not None
+    ]
+    body = " · ".join(domestic_bits) if domestic_bits else snapshot.fetched_at
+    if overseas:
+        body += f" / 해외({', '.join(overseas)})는 표 시점 기준"
+    return f"> 데이터 시점: {body}"
+
+
+def apply_verified_quotes_to_report(
+    report: str,
+    snapshot: MarketSnapshot,
+) -> str:
+    """LLM 출력의 `## 1) 지수 요약` 표에 실측 시세를 강제 반영한다."""
+    if not snapshot.quotes:
+        return report
+
+    quote_by_name = {quote.name: quote for quote in snapshot.quotes}
+    lines = report.splitlines()
+    out: list[str] = []
+    in_index_section = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## 1)"):
+            in_index_section = True
+            out.append(line)
+            continue
+        if in_index_section and stripped.startswith("## 2)"):
+            in_index_section = False
+        if (
+            in_index_section
+            and stripped.startswith("|")
+            and not stripped.startswith("|---")
+            and "지수" not in stripped
+        ):
+            cells = [cell.strip() for cell in stripped.strip("|").split("|")]
+            if len(cells) >= 5 and cells[1] in _INDEX_TABLE_NAMES:
+                quote = quote_by_name.get(cells[1])
+                if quote is not None and quote.price is not None:
+                    cells[2] = _format_price(quote)
+                    cells[3] = _format_table_change(quote)
+                    line = "| " + " | ".join(cells) + " |"
+        if in_index_section and stripped.startswith("> 데이터 시점"):
+            line = _format_data_timing_line(snapshot)
+        out.append(line)
+
+    return "\n".join(out)

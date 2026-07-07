@@ -19,6 +19,25 @@ from google.genai.types import HttpOptions
 from .config import Settings
 from .models import NewsItem
 
+_MAX_OUTPUT_ATTEMPTS = 3
+_DEFAULT_MAX_OUTPUT_TOKENS = 16384
+_RETRY_MAX_OUTPUT_TOKENS = 32768
+_LLM_CONTENT_PREVIEW_CAP = 500
+
+_RETRY_COMPACT_HINTS = (
+    "",
+    (
+        "\n\n[중요] 이전 응답이 출력 한도로 잘렸습니다. "
+        "모든 문자열 필드를 200자 이내로 줄이고, "
+        "news_scan_results는 제공된 기사 수만큼만 작성하며, "
+        "각 배열은 3~5개 항목으로 제한하세요. JSON을 반드시 완결하세요."
+    ),
+    (
+        "\n\n[최종 재시도] 극도로 간결하게 작성하세요. "
+        "narrative_analysis 150자, 시나리오 각 100자, summary·headline 80자 이내."
+    ),
+)
+
 
 def _build_genai_client(settings: Settings) -> genai.Client:
     if settings.uses_vertexai():
@@ -224,7 +243,8 @@ class GeminiNewsAnalyzer:
             "스키마에 맞춰 작성하라.\n"
             "마크다운, 표, 코드블록, 설명문은 출력하지 마라.\n"
             "모든 키는 영어 snake_case로만 작성하라.\n"
-            "모든 배열은 가능한 한 3개 항목 이상 채워라.\n"
+            "모든 배열은 3~5개 항목으로 채워라.\n"
+            "각 문자열 필드는 250자 이내로 간결하게 작성하라.\n"
             "불확실한 내용은 추정하지 말고 '불확실함'이라고 한 번만 표기하라.\n"
             "아래 기준 시각과 요일은 절대 바꾸지 말고 그대로 출력하라.\n\n"
             f"analysis_reference_datetime_kst: {now_kst.isoformat()}\n"
@@ -258,47 +278,92 @@ class GeminiNewsAnalyzer:
         cleaned = walk(data)
         return cleaned if isinstance(cleaned, dict) else data
 
+    @staticmethod
+    def _response_finish_reason(response: Any) -> str:
+        try:
+            candidates = getattr(response, "candidates", None) or []
+            if candidates:
+                reason = getattr(candidates[0], "finish_reason", None)
+                if reason is not None:
+                    return str(reason).upper()
+        except Exception:
+            pass
+        return ""
+
+    @classmethod
+    def _response_truncated(cls, response: Any) -> bool:
+        return "MAX_TOKEN" in cls._response_finish_reason(response)
+
+    @staticmethod
+    def _parse_response_json(response: Any) -> dict[str, Any]:
+        parsed = getattr(response, "parsed", None)
+        if isinstance(parsed, dict):
+            return parsed
+
+        text = (getattr(response, "text", None) or "").strip()
+        if not text:
+            raise json.JSONDecodeError("empty LLM response", text, 0)
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*```\s*$", "", text)
+
+        payload = json.loads(text)
+        if not isinstance(payload, dict):
+            raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
+        return payload
+
     def analyze(
         self,
         query: str,
         news_items: List[NewsItem],
         searched_days: int,
     ) -> dict[str, Any]:
+        llm_preview = min(
+            self.settings.content_preview_length,
+            _LLM_CONTENT_PREVIEW_CAP,
+        )
         compact_news = [
             {
                 "published_at": item.published_at.isoformat(),
                 "title": item.title,
                 "press": item.press,
                 "url": item.url,
-                "description": item.description,
-                "content": item.content[: self.settings.content_preview_length],
+                "description": item.description[:llm_preview],
+                "content": item.content[:llm_preview],
             }
             for item in news_items
         ]
-        prompt = self._build_prompt(query, searched_days, compact_news)
+        base_prompt = self._build_prompt(query, searched_days, compact_news)
         schema = self._schema()
         last_error: Exception | None = None
+        response: Any = None
 
-        for _attempt in range(2):
+        for attempt, hint in enumerate(_RETRY_COMPACT_HINTS[:_MAX_OUTPUT_ATTEMPTS]):
+            prompt = f"{base_prompt}{hint}" if hint else base_prompt
+            max_tokens = (
+                _RETRY_MAX_OUTPUT_TOKENS
+                if attempt >= 1
+                else _DEFAULT_MAX_OUTPUT_TOKENS
+            )
             response = self.client.models.generate_content(
                 model=self.settings.vertex_model,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_json_schema=schema,
-                    max_output_tokens=8192,
+                    max_output_tokens=max_tokens,
                 ),
             )
             try:
-                payload = json.loads(response.text)
-            except json.JSONDecodeError as exc:
+                payload = self._parse_response_json(response)
+            except (json.JSONDecodeError, ValueError) as exc:
                 last_error = exc
                 continue
-            if not isinstance(payload, dict):
-                raise ValueError("LLM 응답은 JSON 객체 1개여야 합니다.")
             return self._sanitize_payload(payload)
 
-        preview = (response.text or "")[:500].replace("\n", " ")
+        preview = (getattr(response, "text", None) or "")[:500].replace("\n", " ")
+        finish = self._response_finish_reason(response) if response is not None else ""
+        detail = f"finish_reason={finish or 'unknown'}" if finish else ""
         raise ValueError(
-            f"LLM JSON 파싱 실패: {last_error}. 응답 앞부분: {preview}"
+            f"LLM JSON 파싱 실패: {last_error}. {detail} 응답 앞부분: {preview}"
         ) from last_error

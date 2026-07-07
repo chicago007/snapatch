@@ -15,6 +15,13 @@ Snapatch는 4개의 독립 캡스톤 프로젝트를 하나의 플랫폼으로 �
 
 핵심 로직은 `engines/`에 두고, `hub/`는 UI·CLI·환경 초기화만 담당합니다.
 
+## v1.01 (2026-07-07)
+
+breaker·diver 안정화 패치.
+
+- **breaker 국내 시세**: 네이버 금융 실시간 API를 코스피/코스닥 1순위로 추가 (장중 현재가). LLM이 뉴스 수치로 덮어쓰는 문제는 `apply_verified_quotes_to_report()`로 지수 표를 후처리.
+- **diver JSON**: Gemini 구조화 출력이 토큰 한도로 잘리면 `JSONDecodeError` 발생 → 출력 토큰 상향, 프롬프트 축소, 3회 재시도(간결화 힌트).
+
 ## v1.00 (2026-07-07)
 
 첫 정식 통합 릴리스.
@@ -42,8 +49,8 @@ Snapatch는 4개의 독립 캡스톤 프로젝트를 하나의 플랫폼으로 �
 
 ### breaker market data (2026-07)
 - LLM만으로 지수를 생성하면 2,785 vs 8,000 같은 할루시네이션이 발생
-- 해결: LLM 호출 전 pykrx/Yahoo Finance로 `verified_market_data` 블록 주입
-- 네이버 금융 polling API는 비공식이라 기본 체인에 미포함
+- 해결: LLM 호출 전 실측 시세 블록 주입 + v1.01부터 리포트 지수 표 후처리
+- 국내: 네이버 금융 polling API (실시간) → pykrx → Yahoo. 해외·환율·원자재: Yahoo
 
 ### Model defaults
 - accurate 모드 = Google Search + thinking (모델은 flash)

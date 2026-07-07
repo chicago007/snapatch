@@ -6,6 +6,7 @@ from engines.breaker.market_data import (
     MarketQuote,
     MarketSnapshot,
     _pct_change,
+    apply_verified_quotes_to_report,
     format_market_data_block,
 )
 
@@ -45,3 +46,50 @@ def test_format_market_data_block_empty_snapshot() -> None:
     block = format_market_data_block(snapshot)
     assert "가져오지 못했습니다" in block
     assert "코스피" in block
+
+
+def test_apply_verified_quotes_to_report_patches_index_table() -> None:
+    snapshot = MarketSnapshot(
+        fetched_at="2026-07-07 10:42 KST",
+        quotes=[
+            MarketQuote(
+                name="코스피",
+                price=7641.99,
+                change=-409.34,
+                change_pct=-5.08,
+                currency="KRW",
+                source="naver",
+                as_of="2026-07-07 10:42 KST (네이버금융)",
+                market_state="OPEN",
+            ),
+            MarketQuote(
+                name="S&P500",
+                price=7537.43,
+                change=54.19,
+                change_pct=0.72,
+                currency="USD",
+                source="yahoo",
+                as_of="2026-07-07 05:43 KST (SNP)",
+            ),
+        ],
+    )
+    report = "\n".join(
+        [
+            "## 1) 지수 요약",
+            "| 구분 | 지수 | 현재가 | 전일대비 | 코멘트 |",
+            "|---|---|---|---|---|",
+            "| 국내 | 코스피 | 8,051.33p | -343.32 (-4.09%) | 잘못된 값 |",
+            "| 해외 | S&P500 | 7,537.43 | +183.41 (+2.49%) | 잘못된 값 |",
+            "",
+            "> 데이터 시점: 예시",
+            "",
+            "## 2) 섹터 / 테마 요약",
+        ]
+    )
+    patched = apply_verified_quotes_to_report(report, snapshot)
+    assert "7,641.99p" in patched
+    assert "-409.34 (-5.08%)" in patched
+    assert "+54.19 (+0.72%)" in patched
+    assert "8,051.33p" not in patched
+    assert "+2.49%" not in patched
+    assert "장중" in patched

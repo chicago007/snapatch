@@ -5,7 +5,7 @@
 ![Gemini](https://img.shields.io/badge/Gemini-API-4285F4?logo=google&logoColor=white)
 ![License](https://img.shields.io/badge/License-TBD-lightgrey)
 
-![Version](https://img.shields.io/badge/version-v1.00-blue)
+![Version](https://img.shields.io/badge/version-v1.01-blue)
 
 > **AI-Powered Stock Intelligence Platform**
 >
@@ -218,6 +218,7 @@ snapatch/
 - [x] Streamlit 대시보드 + CLI
 - [x] breaker 실측 시세 주입 (pykrx / Yahoo Finance)
 - [x] v1.00 릴리스 · CHANGELOG 도입
+- [x] v1.01 — breaker 국내 시세(네이버) · diver JSON 안정화
 - [ ] Demo GIF · 스크린샷
 - [ ] Portfolio analysis
 - [ ] ETF similarity

@@ -48,6 +48,7 @@ import requests
 
 from .market_data import (
     MarketSnapshot,
+    apply_verified_quotes_to_report,
     fetch_market_snapshot,
     format_market_data_block,
 )
@@ -391,10 +392,14 @@ def generate_briefing(
         "x-goog-api-key": api_key,
     }
 
-    market_data_block = _resolve_market_data_block(
-        now_kst,
-        market_snapshot,
-        use_market_data=use_market_data,
+    snapshot = market_snapshot
+    if snapshot is None and use_market_data:
+        snapshot = fetch_market_snapshot(now_kst)
+
+    market_data_block = (
+        format_market_data_block(snapshot)
+        if use_market_data and snapshot is not None
+        else None
     )
 
     body = _build_briefing_body(
@@ -455,7 +460,10 @@ def generate_briefing(
             )
         raise RuntimeError(f"빈 응답: {json.dumps(data)[:500]}")
 
-    return _append_grounding_chunks(text, candidate)
+    text = _append_grounding_chunks(text, candidate)
+    if use_market_data and snapshot is not None and snapshot.quotes:
+        text = apply_verified_quotes_to_report(text, snapshot)
+    return text
 
 
 def stream_briefing(
@@ -574,7 +582,7 @@ def _print_market_snapshot_summary(snapshot: MarketSnapshot) -> None:
         print()
         return
 
-    print("[시세] pykrx / Yahoo Finance 실측값:")
+    print("[시세] 네이버금융 / Yahoo Finance 실측값:")
     for quote in snapshot.quotes:
         price = f"{quote.price:,.2f}" if quote.price is not None else "—"
         pct = f"{quote.change_pct:+.2f}%" if quote.change_pct is not None else "—"

@@ -9,5 +9,5 @@ GITHUB_REPO = "snapatch"
 GITHUB_URL = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
 
 # 버전 올릴 때: CHANGELOG.md + docs/DEVELOPMENT_NOTES.md 도 함께 갱신
-VERSION = "1.00"
+VERSION = "1.01"
 VERSION_LABEL = f"v{VERSION}"
