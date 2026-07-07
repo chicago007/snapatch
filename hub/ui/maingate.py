@@ -24,9 +24,16 @@ import streamlit as st
 
 from hub import bootstrap
 from hub.paths import breaker_output_dir, project_root
-from hub.project_info import AUTHOR_EMAIL, AUTHOR_NAME, GITHUB_URL, VERSION_LABEL
+from hub.project_info import (
+    AUTHOR_EMAIL,
+    AUTHOR_NAME,
+    GITHUB_URL,
+    read_version_label,
+)
 
 bootstrap.init()
+
+VERSION_LABEL = read_version_label()
 
 st.set_page_config(
     page_title="snapatch",
