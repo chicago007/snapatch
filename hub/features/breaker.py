@@ -142,8 +142,8 @@ def render() -> None:
             market_snapshot = fetch_market_snapshot(label)
             if market_snapshot.quotes:
                 summary = ", ".join(
-                    f"{q.name} {q.price:,.2f} ({q.change_pct:+.2f}%)"
-                    for q in market_snapshot.quotes[:3]
+                    f"{q.name} {q.price:,.2f} ({q.change_pct:+.2f}%) [{q.source}]"
+                    for q in market_snapshot.quotes[:5]
                     if q.price is not None and q.change_pct is not None
                 )
                 st.caption(f"실측 시세: {summary} …")

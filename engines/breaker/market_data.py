@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -24,10 +25,18 @@ _YAHOO_HEADERS = {
     ),
 }
 _NAVER_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; snapatch-breaker/1.0)",
-    "Referer": "https://finance.naver.com/",
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.naver.com/sise/sise_index.naver",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8",
 }
-_YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+_YAHOO_CHART_URLS = (
+    "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+    "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}",
+)
 _NAVER_INDEX_URL = (
     "https://polling.finance.naver.com/api/realtime/domestic/index/{code}"
 )
@@ -103,21 +112,31 @@ def _parse_number(value: Any) -> float | None:
         return None
 
 
+def _has_krx_credentials() -> bool:
+    return bool(os.getenv("KRX_ID", "").strip() and os.getenv("KRX_PW", "").strip())
+
+
 def _fetch_naver_index(name: str, code: str) -> MarketQuote | None:
-    try:
-        resp = requests.get(
-            _NAVER_INDEX_URL.format(code=code),
-            headers=_NAVER_HEADERS,
-            timeout=10,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        rows = payload.get("datas") or []
-        if not rows:
-            return None
-        row: dict[str, Any] = rows[0]
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("naver %s failed: %s", name, exc)
+    last_error: Exception | None = None
+    for _attempt in range(2):
+        try:
+            resp = requests.get(
+                _NAVER_INDEX_URL.format(code=code),
+                headers=_NAVER_HEADERS,
+                timeout=12,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            rows = payload.get("datas") or []
+            if not rows:
+                continue
+            row: dict[str, Any] = rows[0]
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+    else:
+        logger.debug("naver %s failed: %s", name, last_error)
         return None
 
     price = _parse_number(row.get("closePrice"))
@@ -211,22 +230,28 @@ def _fetch_pykrx_index(name: str, ticker: str) -> MarketQuote | None:
 
 
 def _fetch_yahoo_quote(name: str, symbol: str) -> MarketQuote | None:
-    try:
-        resp = requests.get(
-            _YAHOO_CHART_URL.format(symbol=symbol),
-            params={"interval": "1d", "range": "5d"},
-            headers=_YAHOO_HEADERS,
-            timeout=15,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        result = (payload.get("chart") or {}).get("result") or []
-        if not result:
-            return None
-        block = result[0]
-        meta: dict[str, Any] = block.get("meta") or {}
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("yahoo %s failed: %s", name, exc)
+    last_error: Exception | None = None
+    for chart_url in _YAHOO_CHART_URLS:
+        try:
+            resp = requests.get(
+                chart_url.format(symbol=symbol),
+                params={"interval": "1d", "range": "5d"},
+                headers=_YAHOO_HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            result = (payload.get("chart") or {}).get("result") or []
+            if not result:
+                continue
+            block = result[0]
+            meta: dict[str, Any] = block.get("meta") or {}
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            continue
+    else:
+        logger.debug("yahoo %s failed: %s", name, last_error)
         return None
 
     price = meta.get("regularMarketPrice")
@@ -285,15 +310,21 @@ def _fetch_domestic_index(name: str) -> MarketQuote | None:
         if quote is not None:
             return quote
 
+    symbol = _YAHOO_SYMBOLS.get(name)
+    if symbol:
+        quote = _fetch_yahoo_quote(name, symbol)
+        if quote is not None:
+            return quote
+
+    if not _has_krx_credentials():
+        return None
+
     ticker = _PYKRX_INDICES.get(name)
     if ticker:
         quote = _fetch_pykrx_index(name, ticker)
         if quote is not None:
             return quote
 
-    symbol = _YAHOO_SYMBOLS.get(name)
-    if symbol:
-        return _fetch_yahoo_quote(name, symbol)
     return None
 
 
@@ -420,6 +451,84 @@ _INDEX_TABLE_NAMES = frozenset(
     }
 )
 
+_INDEX_ALIASES: dict[str, str] = {
+    "S&P 500": "S&P500",
+    "SP500": "S&P500",
+    "NASDAQ": "나스닥",
+    "Nasdaq": "나스닥",
+    "Nikkei225": "닛케이225",
+    "Nikkei 225": "닛케이225",
+    "USD/KRW": "USD/KRW",
+    "원/달러": "USD/KRW",
+}
+
+_INDEX_SECTION_ORDER: tuple[tuple[str, str], ...] = (
+    ("코스피", "국내"),
+    ("코스닥", "국내"),
+    ("S&P500", "해외"),
+    ("나스닥", "해외"),
+    ("닛케이225", "해외"),
+    ("USD/KRW", "환율"),
+    ("WTI", "원자재"),
+    ("금", "원자재"),
+    ("은", "원자재"),
+)
+
+_CORE_INDEX_NAMES = ("코스피", "코스닥", "S&P500", "나스닥", "USD/KRW")
+
+
+def _canonical_index_name(value: str) -> str | None:
+    cleaned = value.strip()
+    if cleaned in _INDEX_TABLE_NAMES:
+        return cleaned
+    return _INDEX_ALIASES.get(cleaned)
+
+
+def _index_name_from_cells(cells: list[str]) -> str | None:
+    for cell in cells[:3]:
+        name = _canonical_index_name(cell)
+        if name is not None:
+            return name
+    return None
+
+
+def _build_verified_index_table(snapshot: MarketSnapshot) -> list[str]:
+    quote_by_name = {quote.name: quote for quote in snapshot.quotes}
+    lines = [
+        "| 구분 | 지수 | 현재가 | 전일대비 | 코멘트 |",
+        "|---|---|---|---|---|",
+    ]
+    for name, category in _INDEX_SECTION_ORDER:
+        quote = quote_by_name.get(name)
+        if quote is None or quote.price is None:
+            continue
+        lines.append(
+            f"| {category} | {name} | {_format_price(quote)} "
+            f"| {_format_table_change(quote)} | |"
+        )
+    lines.append("")
+    lines.append(_format_data_timing_line(snapshot))
+    return lines
+
+
+def _replace_index_section(report: str, snapshot: MarketSnapshot) -> str:
+    lines = report.splitlines()
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line.strip().startswith("## 1)"):
+            out.append(line)
+            out.append("")
+            out.extend(_build_verified_index_table(snapshot))
+            index += 1
+            while index < len(lines) and not lines[index].strip().startswith("## 2)"):
+                index += 1
+            continue
+        out.append(line)
+        index += 1
+    return "\n".join(out)
+
 
 def _format_table_change(quote: MarketQuote) -> str:
     if quote.change is None or quote.change_pct is None:
@@ -464,6 +573,7 @@ def apply_verified_quotes_to_report(
     lines = report.splitlines()
     out: list[str] = []
     in_index_section = False
+    patched_count = 0
 
     for line in lines:
         stripped = line.strip()
@@ -480,14 +590,29 @@ def apply_verified_quotes_to_report(
             and "지수" not in stripped
         ):
             cells = [cell.strip() for cell in stripped.strip("|").split("|")]
-            if len(cells) >= 5 and cells[1] in _INDEX_TABLE_NAMES:
-                quote = quote_by_name.get(cells[1])
+            index_name = _index_name_from_cells(cells) if len(cells) >= 3 else None
+            if index_name is not None:
+                quote = quote_by_name.get(index_name)
                 if quote is not None and quote.price is not None:
-                    cells[2] = _format_price(quote)
-                    cells[3] = _format_table_change(quote)
-                    line = "| " + " | ".join(cells) + " |"
+                    if len(cells) >= 5 and _canonical_index_name(cells[1]) == index_name:
+                        price_col, change_col = 2, 3
+                    elif _canonical_index_name(cells[0]) == index_name:
+                        price_col, change_col = 1, 2
+                    else:
+                        price_col, change_col = 2, 3
+                    if len(cells) > change_col:
+                        cells[price_col] = _format_price(quote)
+                        cells[change_col] = _format_table_change(quote)
+                        line = "| " + " | ".join(cells) + " |"
+                        patched_count += 1
         if in_index_section and stripped.startswith("> 데이터 시점"):
             line = _format_data_timing_line(snapshot)
         out.append(line)
 
-    return "\n".join(out)
+    result = "\n".join(out)
+    core_available = sum(
+        1 for name in _CORE_INDEX_NAMES if quote_by_name.get(name) is not None
+    )
+    if core_available and patched_count < min(2, core_available):
+        return _replace_index_section(report, snapshot)
+    return result

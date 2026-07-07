@@ -93,3 +93,43 @@ def test_apply_verified_quotes_to_report_patches_index_table() -> None:
     assert "8,051.33p" not in patched
     assert "+2.49%" not in patched
     assert "장중" in patched
+
+
+def test_apply_verified_quotes_replaces_section_when_table_unmatched() -> None:
+    snapshot = MarketSnapshot(
+        fetched_at="2026-07-07 10:42 KST",
+        quotes=[
+            MarketQuote(
+                name="코스피",
+                price=7641.99,
+                change=-409.34,
+                change_pct=-5.08,
+                currency="KRW",
+                source="yahoo",
+                as_of="2026-07-07 10:42 KST",
+            ),
+            MarketQuote(
+                name="S&P500",
+                price=7537.43,
+                change=54.19,
+                change_pct=0.72,
+                currency="USD",
+                source="yahoo",
+                as_of="2026-07-07 05:43 KST",
+            ),
+        ],
+    )
+    report = "\n".join(
+        [
+            "## 1) 지수 요약",
+            "| weird | layout | only |",
+            "|---|---|",
+            "| bad | table |",
+            "",
+            "## 2) 섹터 / 테마 요약",
+        ]
+    )
+    patched = apply_verified_quotes_to_report(report, snapshot)
+    assert "7,641.99p" in patched
+    assert "+54.19 (+0.72%)" in patched
+    assert "| weird | layout | only |" not in patched
