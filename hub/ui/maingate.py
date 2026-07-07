@@ -17,23 +17,26 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 import csv
+import importlib
 import os
 from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
 from hub import bootstrap
-from hub.paths import breaker_output_dir, project_root
-from hub.project_info import (
-    AUTHOR_EMAIL,
-    AUTHOR_NAME,
-    GITHUB_URL,
-    read_version_label,
-)
 
 bootstrap.init()
 
-VERSION_LABEL = read_version_label()
+from hub import project_info as _project_info
+
+importlib.reload(_project_info)
+
+AUTHOR_EMAIL = _project_info.AUTHOR_EMAIL
+AUTHOR_NAME = _project_info.AUTHOR_NAME
+GITHUB_URL = _project_info.GITHUB_URL
+VERSION_LABEL = _project_info.VERSION_LABEL
+
+from hub.paths import breaker_output_dir, project_root
 
 st.set_page_config(
     page_title="snapatch",
