@@ -208,7 +208,10 @@ section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.
   padding-top:14px; border-top:1px solid var(--border);}
 .nav-item {
   display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:13px;
-  text-decoration:none; border:1px solid transparent; transition:background .15s;
+  text-decoration:none !important; border:1px solid transparent; transition:background .15s;
+}
+.nav-item:hover, .nav-item:focus, .nav-item:visited, .nav-item:active {
+  text-decoration:none !important;
 }
 .nav-item:hover {background:var(--hover);}
 .nav-item.active {
@@ -221,9 +224,10 @@ section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.
   background:color-mix(in srgb,var(--accent) 17%, transparent);
 }
 .nav-text {display:flex; flex-direction:column; line-height:1.18; flex:1; min-width:0;}
-.nav-name {color:var(--text); font-weight:700; font-size:.92rem;}
+.nav-name {color:var(--text); font-weight:700; font-size:.92rem; text-decoration:none !important;}
 .nav-sub {color:var(--muted); font-size:.72rem; white-space:nowrap; overflow:hidden;
-  text-overflow:ellipsis;}
+  text-overflow:ellipsis; text-decoration:none !important;}
+.snap-nav a, .snap-nav-bottom a {text-decoration:none !important;}
 .nav-badge {font-size:.6rem; font-weight:800; padding:2px 8px; border-radius:999px;
   flex:0 0 auto;}
 .nav-badge.on {background:rgba(34,197,94,.16); color:#4ade80;

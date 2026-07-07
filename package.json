@@ -1,0 +1,9 @@
+{
+  "name": "snapatch",
+  "private": true,
+  "description": "AI-powered stock intelligence platform (Python / Streamlit)",
+  "scripts": {
+    "dev": "python3 -m streamlit run hub/ui/maingate.py",
+    "start": "python3 run.py"
+  }
+}
