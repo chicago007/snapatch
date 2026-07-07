@@ -11,6 +11,11 @@ _WEB_GUIDE = project_root() / "docs" / "WEB_USER_GUIDE.md"
 _LOCAL_GUIDE = project_root() / "docs" / "USER_GUIDE.md"
 
 
+def _page_href(page: str) -> str:
+    theme = st.query_params.get("theme", "dark")
+    return f"?page={page}&theme={theme}"
+
+
 def render() -> None:
     st.header("📖 사용 설명서")
     st.caption("브라우저에서 바로 쓰는 방법 (API 키·설치 불필요)")
@@ -36,8 +41,14 @@ def render() -> None:
     content = _WEB_GUIDE.read_text(encoding="utf-8")
     st.markdown(content, unsafe_allow_html=False)
 
+    st.link_button(
+        "로컬 · CLI 설명서 보기",
+        _page_href("local_guide"),
+        use_container_width=True,
+    )
+
     st.download_button(
-        "Markdown 다운로드",
+        "웹 이용 안내 Markdown 다운로드",
         data=content.encode("utf-8"),
         file_name="snapatch_WEB_USER_GUIDE.md",
         mime="text/markdown",
@@ -45,6 +56,32 @@ def render() -> None:
         key="dl_user_guide",
     )
 
-    if _LOCAL_GUIDE.is_file():
-        with st.expander("로컬 · CLI 설치 안내 (개발자용)", expanded=False):
-            st.markdown(_LOCAL_GUIDE.read_text(encoding="utf-8"))
+
+def render_local() -> None:
+    st.header("📖 로컬 · CLI 사용 설명서")
+    st.caption("PC 설치 · `.env` · `outputs/` 폴더 · 터미널 CLI")
+
+    st.link_button(
+        "← 웹 이용 안내로",
+        _page_href("guide"),
+        use_container_width=False,
+    )
+
+    if not _LOCAL_GUIDE.is_file():
+        st.error(
+            f"로컬 사용 설명서를 찾을 수 없습니다: `{_LOCAL_GUIDE}`",
+            icon="🚫",
+        )
+        return
+
+    content = _LOCAL_GUIDE.read_text(encoding="utf-8")
+    st.markdown(content, unsafe_allow_html=False)
+
+    st.download_button(
+        "로컬 · CLI 설명서 Markdown 다운로드",
+        data=content.encode("utf-8"),
+        file_name="snapatch_USER_GUIDE.md",
+        mime="text/markdown",
+        use_container_width=True,
+        key="dl_local_guide",
+    )

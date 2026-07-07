@@ -494,7 +494,7 @@ def _render_sidebar(page: str, theme: str) -> None:
                 f'<span class="nav-badge {badge_cls}">{badge_txt}</span></a>'
             )
         guide_item = (
-            f'<a class="nav-item {"active" if page == "guide" else ""}" '
+            f'<a class="nav-item {"active" if page in {"guide", "local_guide"} else ""}" '
             f'target="_self" style="--accent:{"#8b5cf6"}" '
             f'href="{_href("guide", theme)}">'
             f'<span class="nav-chip">{_svg("book", 18)}</span>'
@@ -520,7 +520,7 @@ def _render_sidebar(page: str, theme: str) -> None:
 def main() -> None:
     page = st.query_params.get("page", "home")
     theme = st.query_params.get("theme", "dark")
-    if page not in {"home", "guide", *_FEATURES}:
+    if page not in {"home", "guide", "local_guide", *_FEATURES}:
         page = "home"
 
     st.markdown(
@@ -538,6 +538,12 @@ def main() -> None:
         from hub.features import guide
 
         guide.render()
+        return
+
+    if page == "local_guide":
+        from hub.features import guide
+
+        guide.render_local()
         return
 
     if page == "breaker":
