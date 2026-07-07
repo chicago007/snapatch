@@ -87,6 +87,10 @@ _ICONS = {
         '<polyline points="17 6 23 6 23 12"/>'
     ),
     "moon": '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>',
+    "book": (
+        '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>'
+        '<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'
+    ),
     "sun": (
         '<circle cx="12" cy="12" r="5"/>'
         '<line x1="12" y1="1" x2="12" y2="3"/>'
@@ -183,7 +187,10 @@ _BASE_CSS = """
 [data-testid="stHeader"] {background:transparent;}
 #MainMenu, footer {visibility:hidden;}
 .block-container {padding-top:1.4rem; padding-bottom:2rem; max-width:1180px;}
-section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.6rem;}
+section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.6rem;
+  display:flex; flex-direction:column; min-height:100vh;}
+.snap-sidebar-body {flex:1; display:flex; flex-direction:column; min-height:0;}
+.snap-sidebar-spacer {flex:1; min-height:12px;}
 
 /* ---- 사이드바 브랜드 ---- */
 .snap-brand {display:flex; align-items:center; gap:11px; padding:6px 8px 16px;}
@@ -197,6 +204,8 @@ section[data-testid="stSidebar"] > div {background:var(--sidebar); padding-top:.
 
 /* ---- 사이드바 네비 ---- */
 .snap-nav {display:flex; flex-direction:column; gap:5px;}
+.snap-nav-bottom {display:flex; flex-direction:column; gap:5px; margin-top:18px;
+  padding-top:14px; border-top:1px solid var(--border);}
 .nav-item {
   display:flex; align-items:center; gap:11px; padding:9px 11px; border-radius:13px;
   text-decoration:none; border:1px solid transparent; transition:background .15s;
@@ -444,7 +453,8 @@ def _render_home(theme: str) -> None:
             f"**{VERSION_LABEL}** · **{AUTHOR_NAME}**  \n"
             f"[GitHub]({GITHUB_URL}) · "
             f"[{AUTHOR_EMAIL}](mailto:{AUTHOR_EMAIL}) · "
-            f"[Changelog]({GITHUB_URL}/blob/main/CHANGELOG.md)  \n\n"
+            f"[Changelog]({GITHUB_URL}/blob/main/CHANGELOG.md) · "
+            f"[사용 설명서]({_href('guide', theme)})  \n\n"
             "주식 속보 · AI 뉴스 분석 · 과거 패턴 · 유사 종목을 "
             "하나의 대시보드에서 사용할 수 있는 통합 플랫폼입니다."
         )
@@ -459,7 +469,7 @@ def _render_sidebar(page: str, theme: str) -> None:
             '<span class="b-name">snapatch</span></div>',
             unsafe_allow_html=True,
         )
-        items = [
+        main_items = [
             (
                 f'<a class="nav-item {"active" if page == "home" else ""}" '
                 f'target="_self" style="--accent:{"#3b82f6"}" '
@@ -474,7 +484,7 @@ def _render_sidebar(page: str, theme: str) -> None:
             badge_cls, badge_txt = (
                 ("on", "ON") if status[key] else ("key", "KEY")
             )
-            items.append(
+            main_items.append(
                 f'<a class="nav-item {active}" target="_self" '
                 f'style="--accent:{meta["accent"]}" href="{_href(key, theme)}">'
                 f'<span class="nav-chip">{_svg(meta["icon"], 18)}</span>'
@@ -483,8 +493,20 @@ def _render_sidebar(page: str, theme: str) -> None:
                 f'<span class="nav-sub">{meta["title"]}</span></span>'
                 f'<span class="nav-badge {badge_cls}">{badge_txt}</span></a>'
             )
+        guide_item = (
+            f'<a class="nav-item {"active" if page == "guide" else ""}" '
+            f'target="_self" style="--accent:{"#8b5cf6"}" '
+            f'href="{_href("guide", theme)}">'
+            f'<span class="nav-chip">{_svg("book", 18)}</span>'
+            '<span class="nav-text"><span class="nav-name">사용 설명서</span>'
+            '<span class="nav-sub">웹 이용 · 다운로드 안내</span></span></a>'
+        )
         st.markdown(
-            f'<div class="snap-nav">{"".join(items)}</div>',
+            '<div class="snap-sidebar-body">'
+            f'<div class="snap-nav">{"".join(main_items)}</div>'
+            '<div class="snap-sidebar-spacer"></div>'
+            f'<div class="snap-nav-bottom">{guide_item}</div>'
+            '</div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -498,7 +520,7 @@ def _render_sidebar(page: str, theme: str) -> None:
 def main() -> None:
     page = st.query_params.get("page", "home")
     theme = st.query_params.get("theme", "dark")
-    if page not in {"home", *_FEATURES}:
+    if page not in {"home", "guide", *_FEATURES}:
         page = "home"
 
     st.markdown(
@@ -510,6 +532,12 @@ def main() -> None:
 
     if page == "home":
         _render_home(theme)
+        return
+
+    if page == "guide":
+        from hub.features import guide
+
+        guide.render()
         return
 
     if page == "breaker":

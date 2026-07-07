@@ -8,6 +8,7 @@ import time
 import streamlit as st
 
 from hub import bootstrap
+from hub.runtime import can_persist_outputs, is_streamlit_cloud
 
 bootstrap.init()
 
@@ -47,15 +48,25 @@ def render() -> None:
 
     missing = _check_credentials()
     if missing:
-        st.error(
-            "환경변수가 설정되지 않았습니다: " + ", ".join(missing),
-            icon="🚫",
-        )
-        st.caption(
-            "`.env` 또는 Streamlit Secrets에 키를 넣으세요. "
-            "(Vertex: gcloud 인증 / API 키: GOOGLE_GENAI_USE_VERTEXAI=false)"
-        )
+        if is_streamlit_cloud():
+            st.error(
+                "diver 서비스를 지금 사용할 수 없습니다. "
+                "잠시 후 다시 시도해 주세요.",
+                icon="🚫",
+            )
+        else:
+            st.error(
+                "환경변수가 설정되지 않았습니다: " + ", ".join(missing),
+                icon="🚫",
+            )
+            st.caption(
+                "`.env` 또는 Streamlit Secrets에 키를 넣으세요. "
+                "(Vertex: gcloud 인증 / API 키: GOOGLE_GENAI_USE_VERTEXAI=false)"
+            )
         return
+
+    if is_streamlit_cloud():
+        st.caption("결과는 **Markdown 다운로드**로 저장하세요. (서버 영구 저장 없음)")
 
     settings = Settings()
 
@@ -88,7 +99,9 @@ def render() -> None:
         "원문 생략 (수집만 빠름)",
         value=False,
     )
-    save_report = st.checkbox("outputs/diver 폴더에 저장", value=True)
+    save_report = False
+    if can_persist_outputs():
+        save_report = st.checkbox("outputs/diver 폴더에 저장 (로컬)", value=True)
 
     if not run:
         return

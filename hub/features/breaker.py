@@ -9,6 +9,7 @@ from datetime import datetime
 import streamlit as st
 
 from hub import bootstrap
+from hub.runtime import can_persist_outputs, is_streamlit_cloud
 
 bootstrap.init()
 
@@ -47,10 +48,11 @@ def _render_settings() -> None:
             key="breaker_sources",
             height=90,
         )
-        st.checkbox(
-            "outputs/breaker 폴더에 저장",
-            key="breaker_save",
-        )
+        if can_persist_outputs():
+            st.checkbox(
+                "outputs/breaker 폴더에 저장 (로컬)",
+                key="breaker_save",
+            )
 
 
 def render() -> None:
@@ -59,12 +61,22 @@ def render() -> None:
 
     api_key = get_gemini_api_key()
     if not api_key:
-        st.error(
-            "GEMINI_API_KEY 또는 GOOGLE_API_KEY 가 설정되지 않았습니다. "
-            "`.env` 파일 또는 환경변수를 확인하세요.",
-            icon="🚫",
-        )
+        if is_streamlit_cloud():
+            st.error(
+                "breaker 서비스를 지금 사용할 수 없습니다. "
+                "잠시 후 다시 시도해 주세요.",
+                icon="🚫",
+            )
+        else:
+            st.error(
+                "GEMINI_API_KEY 또는 GOOGLE_API_KEY 가 설정되지 않았습니다. "
+                "`.env` 파일 또는 환경변수를 확인하세요.",
+                icon="🚫",
+            )
         return
+
+    if is_streamlit_cloud():
+        st.caption("결과는 **마크다운 다운로드**로 저장하세요. (서버 영구 저장 없음)")
 
     env_model = (
         os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip()
@@ -82,7 +94,7 @@ def render() -> None:
         "breaker_sources",
         os.environ.get("BRIEFING_SOURCES", ", ".join(DEFAULT_SOURCES)),
     )
-    st.session_state.setdefault("breaker_save", True)
+    st.session_state.setdefault("breaker_save", can_persist_outputs())
     st.session_state.setdefault("breaker_fast", "fast")
 
     mode_col, btn_col = st.columns([2, 1])
@@ -120,7 +132,7 @@ def render() -> None:
         st.session_state.get("breaker_model"),
     )
     raw_sources = st.session_state["breaker_sources"]
-    should_save = st.session_state["breaker_save"]
+    should_save = can_persist_outputs() and st.session_state.get("breaker_save", False)
 
     sources = [
         s.strip()

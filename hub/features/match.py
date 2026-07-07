@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from hub import bootstrap
+from hub.runtime import is_streamlit_cloud
 
 bootstrap.init()
 
@@ -140,8 +141,10 @@ def render() -> None:
         "1차 SAX·특징 필터 → 2차 FastDTW. "
         "기준 종목 종가 패턴과 닮은 다른 종목을 찾습니다.",
     )
+    if is_streamlit_cloud():
+        st.caption("결과 표·차트는 **화면에서 확인**하세요. (서버 파일 영구 저장 없음)")
 
-    with st.expander("KRX 로그인 (선택 · pykrx data.krx 조회)", expanded=False):
+    with st.expander("KRX 로그인 (선택 · 조회 실패 시)", expanded=False):
         lc1, lc2 = st.columns(2)
         krx_id = lc1.text_input("KRX 아이디", value=os.getenv("KRX_ID", ""))
         krx_pw = lc2.text_input("KRX 비밀번호", value="", type="password")

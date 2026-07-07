@@ -97,7 +97,8 @@ User
   └──────────────────────── outputs/
 ```
 
-상세 구조는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
+상세 구조는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.  
+**사용 방법**은 [docs/WEB_USER_GUIDE.md](docs/WEB_USER_GUIDE.md)(웹) · [docs/USER_GUIDE.md](docs/USER_GUIDE.md)(로컬/CLI)를 참고하세요.
 
 ---
 

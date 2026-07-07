@@ -12,6 +12,7 @@ from typing import Any
 import streamlit as st
 
 from hub import bootstrap
+from hub.runtime import is_streamlit_cloud
 
 bootstrap.init()
 
@@ -99,6 +100,12 @@ def render() -> None:
         "6트랙 독립 분석 (주가 z / 로그수익률 / MA z × Pearson·DTW). "
         "관찰 구간과 닮은 과거 구간의 이후 수익률을 요약합니다.",
     )
+    if is_streamlit_cloud():
+        st.info(
+            "웹에서는 결과가 서버에 영구 저장되지 않습니다. "
+            "분석 후 **표·결과문서 다운로드**와 차트 확인을 이용하세요.",
+            icon="ℹ️",
+        )
     if not dejavu._HAS_DTW:
         st.warning(
             "DTW 트랙(1-2, 2-2, 3-2)을 사용할 수 없습니다. "
@@ -136,9 +143,13 @@ def render() -> None:
         format_func=lambda k: _TRACK_OPTIONS[k],
     )
     c9, c10, c11 = st.columns(3)
-    save_csv = c9.checkbox("CSV 표 저장", value=False)
-    save_txt = c10.checkbox("TXT 결과문서", value=False)
-    save_md = c11.checkbox("MD 결과문서", value=True)
+    save_csv = False
+    save_txt = False
+    save_md = True
+    if not is_streamlit_cloud():
+        save_csv = c9.checkbox("CSV 표 저장 (로컬)", value=False)
+        save_txt = c10.checkbox("TXT 결과문서 (로컬)", value=False)
+        save_md = c11.checkbox("MD 결과문서 (로컬)", value=True)
 
     if not st.button("패턴 분석", type="primary", use_container_width=True):
         return
@@ -183,7 +194,12 @@ def render() -> None:
     elapsed = time.perf_counter() - started_at
 
     st.success(
-        f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)}) 결과: `{result_dir}`",
+        f"분석이 완료되었습니다. (소요: {_format_elapsed(elapsed)})"
+        + (
+            " 아래 차트·다운로드에서 결과를 저장하세요."
+            if is_streamlit_cloud()
+            else f" 결과: `{result_dir}`"
+        ),
     )
 
     pngs = sorted(result_dir.glob("*.png")) if result_dir.is_dir() else []
